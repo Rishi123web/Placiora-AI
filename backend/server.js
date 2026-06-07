@@ -47,6 +47,8 @@ const CLIENT_URL =
   process.env.FRONTEND_URL ||
   "http://localhost:5173"
 
+const MONGO_URI = process.env.MONGO_URI?.trim()
+
 console.log("GROQ API:", process.env.GROQ_API_KEY ? "Loaded" : "Missing")
 console.log("JUDGE0 URL:", process.env.JUDGE0_URL || "http://localhost:2358")
 console.log(
@@ -62,6 +64,8 @@ console.log(
     ? "Loaded"
     : "Missing"
 )
+console.log("Mongo URI:", MONGO_URI ? "Loaded" : "Missing")
+console.log("Client URL:", CLIENT_URL)
 
 app.use(
   cors({
@@ -85,15 +89,53 @@ const io = new Server(server, {
 
 setupLiveGDSocket(io)
 
-mongoose
-  .connect(process.env.MONGO_URI)
-  .then(() => console.log("MongoDB Connected"))
-  .catch((error) => console.log("MongoDB Error:", error.message))
+if (!MONGO_URI) {
+  console.log("MongoDB Error: MONGO_URI is missing in environment variables")
+} else {
+  mongoose
+    .connect(MONGO_URI, {
+      serverSelectionTimeoutMS: 15000
+    })
+    .then(() => {
+      console.log("MongoDB Connected")
+    })
+    .catch((error) => {
+      console.log("MongoDB Connection Failed")
+      console.log("MongoDB Error Name:", error.name)
+      console.log("MongoDB Error Message:", error.message)
+
+      if (error.reason) {
+        console.log("MongoDB Error Reason:", error.reason)
+      }
+
+      if (error.code) {
+        console.log("MongoDB Error Code:", error.code)
+      }
+    })
+}
 
 app.get("/", (req, res) => {
   res.json({
     success: true,
-    message: "Placiora AI Backend Running"
+    message: "Placiora AI Backend Running",
+    mongoUriLoaded: Boolean(MONGO_URI),
+    clientUrl: CLIENT_URL
+  })
+})
+
+app.get("/api/health", (req, res) => {
+  res.json({
+    success: true,
+    message: "Backend health check passed",
+    mongoState: mongoose.connection.readyState,
+    mongoStateText:
+      mongoose.connection.readyState === 1
+        ? "connected"
+        : mongoose.connection.readyState === 2
+        ? "connecting"
+        : mongoose.connection.readyState === 3
+        ? "disconnecting"
+        : "disconnected"
   })
 })
 
