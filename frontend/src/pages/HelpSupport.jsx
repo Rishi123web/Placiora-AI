@@ -1,5 +1,6 @@
 import { useState } from "react"
 import axios from "axios"
+import API_BASE from "../config/api"
 import MainLayout from "../layouts/MainLayout.jsx"
 
 import {
@@ -123,7 +124,7 @@ const FAQS = [
     icon: Wifi,
     title: "Network error",
     keywords: "network error axios backend localhost cors failed fetch",
-    text: "Make sure backend is running on port 5000, frontend on 5173, CORS CLIENT_URL is correct and the API URL is http://localhost:5000."
+    text: "Make sure backend is live, CORS CLIENT_URL is correct and the frontend VITE_API_URL points to your Render backend."
   },
   {
     icon: Bug,
@@ -185,7 +186,7 @@ function HelpSupport() {
 
       const user = getUser()
 
-      const res = await axios.post("http://localhost:5000/api/support/send", {
+      const res = await axios.post(`${API_BASE}/api/support/send`, {
         category,
         message,
         userName: user?.name || "Unknown User",
