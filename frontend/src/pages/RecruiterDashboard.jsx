@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react"
 import axios from "axios"
 import MainLayout from "../layouts/MainLayout.jsx"
+import API_BASE from "../config/api"
 
 import {
   Building2,
@@ -18,7 +19,7 @@ import {
   TrendingUp
 } from "lucide-react"
 
-const API = "http://localhost:5000/api/recruiter-report"
+const API = `${API_BASE}/api/recruiter-report`
 
 function RecruiterDashboard() {
   const user = JSON.parse(localStorage.getItem("user") || "{}")
