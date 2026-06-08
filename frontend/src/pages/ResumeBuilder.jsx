@@ -1,6 +1,7 @@
 import { useState } from "react"
 import axios from "axios"
 import MainLayout from "../layouts/MainLayout.jsx"
+import API_BASE from "../config/api"
 
 import {
   FileText,
@@ -70,13 +71,10 @@ function ResumeBuilder() {
         return
       }
 
-      const res = await axios.post(
-        "http://localhost:5000/api/resume-builder/generate",
-        {
-          userId,
-          ...form
-        }
-      )
+      const res = await axios.post(`${API_BASE}/api/resume-builder/generate`, {
+        userId,
+        ...form
+      })
 
       setResume(res.data.resume || null)
       setSuccess("AI resume generated successfully.")
@@ -95,7 +93,7 @@ function ResumeBuilder() {
     if (!resume?._id) return
 
     window.open(
-      `http://localhost:5000/api/resume-builder/download/${resume._id}`,
+      `${API_BASE}/api/resume-builder/download/${resume._id}`,
       "_blank"
     )
   }
