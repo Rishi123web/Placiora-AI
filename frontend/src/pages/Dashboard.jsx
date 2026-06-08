@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import axios from "axios"
+import API_BASE from "../config/api"
 
 import MainLayout from "../layouts/MainLayout.jsx"
 
@@ -92,8 +93,8 @@ function Dashboard() {
         }
 
         const [analyticsResult, liveResult] = await Promise.allSettled([
-          axios.get(`http://localhost:5000/api/analytics/dashboard/${userId}`),
-          axios.get(`http://localhost:5000/api/live-interview/history/${userId}`)
+          axios.get(`${API_BASE}/api/analytics/dashboard/${userId}`),
+          axios.get(`${API_BASE}/api/live-interview/history/${userId}`)
         ])
 
         const stats =
@@ -407,10 +408,7 @@ function Dashboard() {
                   Live Interview
                 </HeroButton>
 
-                <HeroButton
-                  onClick={() => navigate("/gd-round")}
-                  color="pink"
-                >
+                <HeroButton onClick={() => navigate("/gd-round")} color="pink">
                   GD Round
                 </HeroButton>
 
@@ -494,11 +492,7 @@ function Dashboard() {
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6">
           <StatCard
             title="Communication"
-            value={
-              loading
-                ? "..."
-                : `${analytics.averageCommunicationAnalysisScore}%`
-            }
+            value={loading ? "..." : `${analytics.averageCommunicationAnalysisScore}%`}
             icon={MessageCircle}
             color="from-emerald-500 to-teal-700"
             onMouseMove={handleMouseMove}
@@ -506,11 +500,7 @@ function Dashboard() {
 
           <StatCard
             title="Vocabulary"
-            value={
-              loading
-                ? "..."
-                : `${analytics.averageProfessionalVocabularyScore}%`
-            }
+            value={loading ? "..." : `${analytics.averageProfessionalVocabularyScore}%`}
             icon={Sparkles}
             color="from-blue-500 to-indigo-700"
             onMouseMove={handleMouseMove}
@@ -526,17 +516,10 @@ function Dashboard() {
         </div>
 
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-          <GraphCard
-            title="Score Progress"
-            icon={TrendingUp}
-            onMouseMove={handleMouseMove}
-          >
+          <GraphCard title="Score Progress" icon={TrendingUp} onMouseMove={handleMouseMove}>
             <ResponsiveContainer width="100%" height={280}>
               <LineChart data={scoreTrend}>
-                <CartesianGrid
-                  strokeDasharray="3 3"
-                  stroke="rgba(148,163,184,0.15)"
-                />
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.15)" />
                 <XAxis dataKey="name" stroke="#94a3b8" />
                 <YAxis stroke="#94a3b8" domain={[0, 100]} />
                 <Tooltip contentStyle={tooltipStyle} />
@@ -552,17 +535,10 @@ function Dashboard() {
             </ResponsiveContainer>
           </GraphCard>
 
-          <GraphCard
-            title="Activity Count"
-            icon={BarChart3}
-            onMouseMove={handleMouseMove}
-          >
+          <GraphCard title="Activity Count" icon={BarChart3} onMouseMove={handleMouseMove}>
             <ResponsiveContainer width="100%" height={280}>
               <BarChart data={barData}>
-                <CartesianGrid
-                  strokeDasharray="3 3"
-                  stroke="rgba(148,163,184,0.15)"
-                />
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.15)" />
                 <XAxis dataKey="name" stroke="#94a3b8" />
                 <YAxis stroke="#94a3b8" />
                 <Tooltip contentStyle={tooltipStyle} />
@@ -571,11 +547,7 @@ function Dashboard() {
             </ResponsiveContainer>
           </GraphCard>
 
-          <GraphCard
-            title="Skill Radar"
-            icon={Gauge}
-            onMouseMove={handleMouseMove}
-          >
+          <GraphCard title="Skill Radar" icon={Gauge} onMouseMove={handleMouseMove}>
             <ResponsiveContainer width="100%" height={320}>
               <RadarChart data={radarData}>
                 <PolarGrid stroke="rgba(148,163,184,0.25)" />
@@ -593,28 +565,14 @@ function Dashboard() {
             </ResponsiveContainer>
           </GraphCard>
 
-          <GraphCard
-            title="Activity Distribution"
-            icon={Flame}
-            onMouseMove={handleMouseMove}
-          >
+          <GraphCard title="Activity Distribution" icon={Flame} onMouseMove={handleMouseMove}>
             <ResponsiveContainer width="100%" height={320}>
               <PieChart>
-                <Pie
-                  data={activityData}
-                  dataKey="value"
-                  nameKey="name"
-                  outerRadius={110}
-                  label
-                >
+                <Pie data={activityData} dataKey="value" nameKey="name" outerRadius={110} label>
                   {activityData.map((entry, index) => (
                     <Cell
                       key={entry.name}
-                      fill={
-                        ["#22d3ee", "#a855f7", "#f97316", "#eab308"][
-                          index % 4
-                        ]
-                      }
+                      fill={["#22d3ee", "#a855f7", "#f97316", "#eab308"][index % 4]}
                     />
                   ))}
                 </Pie>
@@ -632,55 +590,19 @@ function Dashboard() {
             <div className="relative z-10">
               <div className="flex items-center gap-3 mb-8">
                 <TrendingUp className="text-cyan-300" size={30} />
-
                 <h2 className="text-3xl font-bold text-white">
                   Performance Analytics
                 </h2>
               </div>
 
               <div className="space-y-7">
-                <PerformanceBar
-                  label="Interview Performance"
-                  value={analytics.averageScore}
-                  color="from-cyan-500 to-blue-700"
-                />
-
-                <PerformanceBar
-                  label="Hiring Probability"
-                  value={analytics.averageHiringProbability}
-                  color="from-purple-500 to-pink-700"
-                />
-
-                <PerformanceBar
-                  label="Communication Quality"
-                  value={analytics.averageCommunicationAnalysisScore}
-                  color="from-emerald-500 to-teal-700"
-                />
-
-                <PerformanceBar
-                  label="Professional Vocabulary"
-                  value={analytics.averageProfessionalVocabularyScore}
-                  color="from-blue-500 to-indigo-700"
-                />
-
-                <PerformanceBar
-                  label="STAR Structure"
-                  value={analytics.averageStarStructureScore}
-                  color="from-yellow-500 to-orange-700"
-                />
-
-                <PerformanceBar
-                  label="Coding Skills"
-                  value={Math.min(analytics.totalCodingRounds * 12, 100)}
-                  color="from-orange-500 to-red-700"
-                />
-
-                <PerformanceBar
-                  label="Aptitude Accuracy"
-                  value={Math.min(analytics.totalAptitudeRounds * 12, 100)}
-                  color="from-yellow-500 to-orange-700"
-                />
-
+                <PerformanceBar label="Interview Performance" value={analytics.averageScore} color="from-cyan-500 to-blue-700" />
+                <PerformanceBar label="Hiring Probability" value={analytics.averageHiringProbability} color="from-purple-500 to-pink-700" />
+                <PerformanceBar label="Communication Quality" value={analytics.averageCommunicationAnalysisScore} color="from-emerald-500 to-teal-700" />
+                <PerformanceBar label="Professional Vocabulary" value={analytics.averageProfessionalVocabularyScore} color="from-blue-500 to-indigo-700" />
+                <PerformanceBar label="STAR Structure" value={analytics.averageStarStructureScore} color="from-yellow-500 to-orange-700" />
+                <PerformanceBar label="Coding Skills" value={Math.min(analytics.totalCodingRounds * 12, 100)} color="from-orange-500 to-red-700" />
+                <PerformanceBar label="Aptitude Accuracy" value={Math.min(analytics.totalAptitudeRounds * 12, 100)} color="from-yellow-500 to-orange-700" />
                 <PerformanceBar
                   label="Overall Preparation"
                   value={Math.min(
@@ -704,46 +626,16 @@ function Dashboard() {
             <div className="relative z-10">
               <div className="flex items-center gap-3 mb-5">
                 <Sparkles className="text-cyan-300" size={28} />
-
                 <h2 className="text-3xl font-bold text-white">AI Insights</h2>
               </div>
 
               <div className="space-y-4">
-                <InsightCard
-                  icon={Target}
-                  title="Latest Hiring Chance"
-                  value={`${analytics.latestHiringProbability}%`}
-                />
-
-                <InsightCard
-                  icon={Gauge}
-                  title="Selection Level"
-                  value={analytics.latestSelectionLevel}
-                />
-
-                <InsightCard
-                  icon={Flame}
-                  title="Best Hiring Chance"
-                  value={`${analytics.bestHiringProbability}%`}
-                />
-
-                <InsightCard
-                  icon={MessageCircle}
-                  title="Latest Communication"
-                  value={`${analytics.latestCommunicationAnalysisScore}%`}
-                />
-
-                <InsightCard
-                  icon={Sparkles}
-                  title="Latest Vocabulary"
-                  value={`${analytics.latestProfessionalVocabularyScore}%`}
-                />
-
-                <InsightCard
-                  icon={Gauge}
-                  title="Latest STAR Structure"
-                  value={`${analytics.latestStarStructureScore}%`}
-                />
+                <InsightCard icon={Target} title="Latest Hiring Chance" value={`${analytics.latestHiringProbability}%`} />
+                <InsightCard icon={Gauge} title="Selection Level" value={analytics.latestSelectionLevel} />
+                <InsightCard icon={Flame} title="Best Hiring Chance" value={`${analytics.bestHiringProbability}%`} />
+                <InsightCard icon={MessageCircle} title="Latest Communication" value={`${analytics.latestCommunicationAnalysisScore}%`} />
+                <InsightCard icon={Sparkles} title="Latest Vocabulary" value={`${analytics.latestProfessionalVocabularyScore}%`} />
+                <InsightCard icon={Gauge} title="Latest STAR Structure" value={`${analytics.latestStarStructureScore}%`} />
 
                 {analytics.latestRecruiterVerdict && (
                   <div className="p-5 rounded-2xl border border-purple-400/20 bg-purple-500/10">
