@@ -1,5 +1,6 @@
 import { useState } from "react"
 import axios from "axios"
+import API_BASE from "../config/api"
 import MainLayout from "../layouts/MainLayout.jsx"
 
 import {
@@ -15,10 +16,7 @@ import {
   RefreshCcw
 } from "lucide-react"
 
-const API =
-  import.meta.env.VITE_API_URL
-    ? `${import.meta.env.VITE_API_URL}/api/hr-interview`
-    : "http://localhost:5000/api/hr-interview"
+const API = `${API_BASE}/api/hr-interview`
 
 const ROLES = [
   "Frontend Developer",
@@ -451,10 +449,22 @@ function HRRound() {
               <>
                 <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-6 gap-4">
                   <MetricCard title="Overall" value={evaluation.score} />
-                  <MetricCard title="Confidence" value={evaluation.confidenceScore} />
-                  <MetricCard title="Communication" value={evaluation.communicationScore} />
-                  <MetricCard title="Professional" value={evaluation.professionalismScore} />
-                  <MetricCard title="STAR" value={evaluation.starStructureScore} />
+                  <MetricCard
+                    title="Confidence"
+                    value={evaluation.confidenceScore}
+                  />
+                  <MetricCard
+                    title="Communication"
+                    value={evaluation.communicationScore}
+                  />
+                  <MetricCard
+                    title="Professional"
+                    value={evaluation.professionalismScore}
+                  />
+                  <MetricCard
+                    title="STAR"
+                    value={evaluation.starStructureScore}
+                  />
                   <MetricCard title="Relevance" value={evaluation.relevanceScore} />
                 </div>
 
