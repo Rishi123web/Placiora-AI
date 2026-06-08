@@ -19,7 +19,9 @@ import {
   Lightbulb
 } from "lucide-react"
 
-const API = "http://localhost:5000/api/coding"
+import API_BASE from "../config/api"
+
+const API = `${API_BASE}/api/coding`
 
 const LANGUAGES = [
   { label: "JavaScript", value: "javascript", monaco: "javascript" },
