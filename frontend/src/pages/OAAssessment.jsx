@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react"
 import axios from "axios"
 import MainLayout from "../layouts/MainLayout.jsx"
+import API_BASE from "../config/api"
 
 import {
   Brain,
@@ -17,7 +18,8 @@ import {
   Target,
   BarChart3
 } from "lucide-react"
-const API = "http://localhost:5000/api/oa-assessment"
+
+const API = `${API_BASE}/api/oa-assessment`
 
 const COMPANIES = [
   "General",
@@ -35,15 +37,12 @@ function OAAssessment() {
 
   const [company, setCompany] = useState("General")
   const [difficulty, setDifficulty] = useState("Beginner")
-
   const [assessmentId, setAssessmentId] = useState("")
   const [questions, setQuestions] = useState([])
   const [currentIndex, setCurrentIndex] = useState(0)
   const [answers, setAnswers] = useState([])
-
   const [durationMinutes, setDurationMinutes] = useState(30)
   const [timeLeft, setTimeLeft] = useState(0)
-
   const [started, setStarted] = useState(false)
   const [completed, setCompleted] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -220,7 +219,9 @@ function OAAssessment() {
   }
 
   const progress =
-    questions.length > 0 ? Math.round((answers.length / questions.length) * 100) : 0
+    questions.length > 0
+      ? Math.round((answers.length / questions.length) * 100)
+      : 0
 
   return (
     <MainLayout>
@@ -231,11 +232,10 @@ function OAAssessment() {
         >
           <div className="absolute -top-32 -right-32 w-[520px] h-[520px] rounded-full bg-orange-500/20 blur-[140px]" />
           <div className="absolute -bottom-40 -left-40 w-[520px] h-[520px] rounded-full bg-cyan-600/20 blur-[140px]" />
-          <div className="absolute inset-0 opacity-0 hover:opacity-100 transition-opacity duration-500 bg-[radial-gradient(circle_at_var(--x)_var(--y),rgba(34,211,238,0.16),transparent_35%)]" />
 
           <div className="relative z-10 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
             <div className="flex items-center gap-5">
-              <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-orange-500 to-red-700 flex items-center justify-center shadow-[0_0_45px_rgba(249,115,22,0.35)]">
+              <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-orange-500 to-red-700 flex items-center justify-center">
                 <Brain size={34} className="text-white" />
               </div>
 
@@ -257,9 +257,11 @@ function OAAssessment() {
             </div>
 
             {started && (
-              <div className="px-7 py-5 rounded-[2rem] bg-red-500/10 border border-red-400/20 text-red-300 flex items-center gap-3 shadow-[0_0_45px_rgba(239,68,68,0.16)]">
+              <div className="px-7 py-5 rounded-[2rem] bg-red-500/10 border border-red-400/20 text-red-300 flex items-center gap-3">
                 <Clock size={24} />
-                <span className="text-4xl font-black">{formatTime(timeLeft)}</span>
+                <span className="text-4xl font-black">
+                  {formatTime(timeLeft)}
+                </span>
               </div>
             )}
           </div>
@@ -268,48 +270,44 @@ function OAAssessment() {
         {!started && !completed && (
           <section
             onMouseMove={handleMouseMove}
-            className="glow-card relative overflow-hidden rounded-[2.3rem] p-8 border border-cyan-400/10 hover:border-cyan-300/30"
+            className="glow-card rounded-[2.3rem] p-8 border border-cyan-400/10 hover:border-cyan-300/30"
           >
-            <div className="absolute inset-0 opacity-0 hover:opacity-100 transition-opacity duration-500 bg-[radial-gradient(circle_at_var(--x)_var(--y),rgba(34,211,238,0.14),transparent_38%)]" />
+            <h2 className="text-2xl font-bold text-white mb-6">
+              Start Company OA
+            </h2>
 
-            <div className="relative z-10">
-              <h2 className="text-2xl font-bold text-white mb-6">
-                Start Company OA
-              </h2>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+              <select
+                value={company}
+                onChange={(e) => setCompany(e.target.value)}
+                className="bg-slate-900/80 border border-white/10 rounded-2xl px-5 py-4 text-white outline-none focus:border-cyan-400"
+              >
+                {COMPANIES.map((item) => (
+                  <option key={item} value={item}>
+                    {item}
+                  </option>
+                ))}
+              </select>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-                <select
-                  value={company}
-                  onChange={(e) => setCompany(e.target.value)}
-                  className="bg-slate-900/80 border border-white/10 rounded-2xl px-5 py-4 text-white outline-none focus:border-cyan-400"
-                >
-                  {COMPANIES.map((item) => (
-                    <option key={item} value={item}>
-                      {item}
-                    </option>
-                  ))}
-                </select>
+              <select
+                value={difficulty}
+                onChange={(e) => setDifficulty(e.target.value)}
+                className="bg-slate-900/80 border border-white/10 rounded-2xl px-5 py-4 text-white outline-none focus:border-cyan-400"
+              >
+                <option>Beginner</option>
+                <option>Intermediate</option>
+                <option>Advanced</option>
+              </select>
 
-                <select
-                  value={difficulty}
-                  onChange={(e) => setDifficulty(e.target.value)}
-                  className="bg-slate-900/80 border border-white/10 rounded-2xl px-5 py-4 text-white outline-none focus:border-cyan-400"
-                >
-                  <option>Beginner</option>
-                  <option>Intermediate</option>
-                  <option>Advanced</option>
-                </select>
-
-                <button
-                  type="button"
-                  onClick={startAssessment}
-                  disabled={loading}
-                  className="glow-button rounded-2xl bg-gradient-to-r from-orange-500 to-red-700 text-white font-semibold disabled:opacity-60 flex items-center justify-center gap-2"
-                >
-                  <RotateCw size={18} className={loading ? "animate-spin" : ""} />
-                  {loading ? "Starting..." : "Start Assessment"}
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={startAssessment}
+                disabled={loading}
+                className="glow-button rounded-2xl bg-gradient-to-r from-orange-500 to-red-700 text-white font-semibold disabled:opacity-60 flex items-center justify-center gap-2"
+              >
+                <RotateCw size={18} className={loading ? "animate-spin" : ""} />
+                {loading ? "Starting..." : "Start Assessment"}
+              </button>
             </div>
           </section>
         )}
@@ -318,154 +316,145 @@ function OAAssessment() {
           <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
             <section
               onMouseMove={handleMouseMove}
-              className="xl:col-span-2 glow-card relative overflow-hidden rounded-[2.3rem] p-8 border border-cyan-400/10 hover:border-cyan-300/30"
+              className="xl:col-span-2 glow-card rounded-[2.3rem] p-8 border border-cyan-400/10 hover:border-cyan-300/30"
             >
-              <div className="absolute inset-0 opacity-0 hover:opacity-100 transition-opacity duration-500 bg-[radial-gradient(circle_at_var(--x)_var(--y),rgba(34,211,238,0.12),transparent_35%)]" />
+              <div className="flex flex-wrap items-center gap-3 mb-5">
+                <Badge icon={Building2} text={company} tone="purple" />
+                <Badge text={difficulty} />
+                <span
+                  className={`px-4 py-2 rounded-xl border ${sectionStyle(
+                    currentQuestion.section
+                  )}`}
+                >
+                  {sectionLabel(currentQuestion.section)}
+                </span>
+                <Badge text={`Marks: ${currentQuestion.marks || 1}`} />
+              </div>
 
-              <div className="relative z-10">
-                <div className="flex flex-wrap items-center gap-3 mb-5">
-                  <Badge icon={Building2} text={company} tone="purple" />
-                  <Badge text={difficulty} />
-                  <span
-                    className={`px-4 py-2 rounded-xl border ${sectionStyle(
-                      currentQuestion.section
-                    )}`}
-                  >
-                    {sectionLabel(currentQuestion.section)}
-                  </span>
-                  <Badge text={`Marks: ${currentQuestion.marks || 1}`} />
-                </div>
+              <p className="text-cyan-300 font-semibold mb-3">
+                Question {currentIndex + 1} / {questions.length}
+              </p>
 
-                <p className="text-cyan-300 font-semibold mb-3">
-                  Question {currentIndex + 1} / {questions.length}
-                </p>
+              <h2 className="text-2xl lg:text-3xl font-bold text-white leading-10 mb-8">
+                {currentQuestion.question || "No question found."}
+              </h2>
 
-                <h2 className="text-2xl lg:text-3xl font-bold text-white leading-10 mb-8">
-                  {currentQuestion.question || "No question found."}
-                </h2>
+              <div className="space-y-4">
+                {(currentQuestion.options || []).map((option, index) => {
+                  const active = selectedAnswer() === option
 
-                <div className="space-y-4">
-                  {(currentQuestion.options || []).map((option, index) => {
-                    const active = selectedAnswer() === option
+                  return (
+                    <button
+                      key={`${option}-${index}`}
+                      type="button"
+                      onClick={() => chooseAnswer(option)}
+                      className={`w-full text-left px-5 py-4 rounded-2xl border transition-all duration-300 ${
+                        active
+                          ? "bg-gradient-to-r from-cyan-500/20 to-blue-500/20 border-cyan-400 text-white"
+                          : "bg-slate-950/70 border-white/10 text-slate-300 hover:border-cyan-400/30"
+                      }`}
+                    >
+                      <span className="font-semibold mr-3">
+                        {String.fromCharCode(65 + index)}.
+                      </span>
+                      {option}
+                    </button>
+                  )
+                })}
+              </div>
 
-                    return (
-                      <button
-                        key={`${option}-${index}`}
-                        type="button"
-                        onClick={() => chooseAnswer(option)}
-                        className={`w-full text-left px-5 py-4 rounded-2xl border transition-all duration-300 ${
-                          active
-                            ? "bg-gradient-to-r from-cyan-500/20 to-blue-500/20 border-cyan-400 text-white shadow-[0_0_28px_rgba(34,211,238,0.18)]"
-                            : "bg-slate-950/70 border-white/10 text-slate-300 hover:border-cyan-400/30 hover:bg-cyan-500/5"
-                        }`}
-                      >
-                        <span className="font-semibold mr-3">
-                          {String.fromCharCode(65 + index)}.
-                        </span>
-                        {option}
-                      </button>
-                    )
-                  })}
-                </div>
+              <div className="flex flex-wrap justify-between gap-3 mt-8">
+                <button
+                  type="button"
+                  onClick={previousQuestion}
+                  disabled={currentIndex === 0}
+                  className="px-6 py-3 rounded-xl bg-white/10 hover:bg-white/15 text-white font-semibold disabled:opacity-40"
+                >
+                  Previous
+                </button>
 
-                <div className="flex flex-wrap justify-between gap-3 mt-8">
+                {currentIndex < questions.length - 1 ? (
                   <button
                     type="button"
-                    onClick={previousQuestion}
-                    disabled={currentIndex === 0}
-                    className="px-6 py-3 rounded-xl bg-white/10 hover:bg-white/15 text-white font-semibold disabled:opacity-40"
+                    onClick={nextQuestion}
+                    className="glow-button px-6 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-semibold"
                   >
-                    Previous
+                    Next
                   </button>
-
-                  <div className="flex flex-wrap gap-3">
-                    {currentIndex < questions.length - 1 ? (
-                      <button
-                        type="button"
-                        onClick={nextQuestion}
-                        className="glow-button px-6 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-semibold"
-                      >
-                        Next
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => finishAssessment(false)}
-                        disabled={finishing}
-                        className="glow-button px-6 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold flex items-center gap-2 disabled:opacity-60"
-                      >
-                        <Send size={18} />
-                        {finishing ? "Finishing..." : "Finish Assessment"}
-                      </button>
-                    )}
-                  </div>
-                </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => finishAssessment(false)}
+                    disabled={finishing}
+                    className="glow-button px-6 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold flex items-center gap-2 disabled:opacity-60"
+                  >
+                    <Send size={18} />
+                    {finishing ? "Finishing..." : "Finish Assessment"}
+                  </button>
+                )}
               </div>
             </section>
 
             <aside
               onMouseMove={handleMouseMove}
-              className="glow-card relative overflow-hidden rounded-[2.3rem] p-6 border border-cyan-400/10 hover:border-cyan-300/30"
+              className="glow-card rounded-[2.3rem] p-6 border border-cyan-400/10 hover:border-cyan-300/30"
             >
-              <div className="absolute inset-0 opacity-0 hover:opacity-100 transition-opacity duration-500 bg-[radial-gradient(circle_at_var(--x)_var(--y),rgba(34,211,238,0.10),transparent_35%)]" />
+              <h2 className="text-2xl font-bold text-white mb-5">
+                Question Navigator
+              </h2>
 
-              <div className="relative z-10">
-                <h2 className="text-2xl font-bold text-white mb-5">
-                  Question Navigator
-                </h2>
-
-                <div className="mb-6">
-                  <div className="flex justify-between text-sm text-slate-400 mb-2">
-                    <span>Progress</span>
-                    <span>{progress}%</span>
-                  </div>
-                  <div className="h-3 rounded-full bg-slate-800 overflow-hidden">
-                    <div
-                      className="h-full rounded-full bg-gradient-to-r from-cyan-400 to-blue-600"
-                      style={{ width: `${progress}%` }}
-                    />
-                  </div>
+              <div className="mb-6">
+                <div className="flex justify-between text-sm text-slate-400 mb-2">
+                  <span>Progress</span>
+                  <span>{progress}%</span>
                 </div>
 
-                <div className="grid grid-cols-5 gap-3">
-                  {questions.map((question, index) => {
-                    const answered = answers.some((item) => item.id === question.id)
-                    const active = currentIndex === index
-
-                    return (
-                      <button
-                        key={question.id}
-                        type="button"
-                        onClick={() => setCurrentIndex(index)}
-                        className={`h-12 rounded-xl border font-semibold transition-all ${
-                          active
-                            ? "bg-cyan-500 border-cyan-300 text-white shadow-[0_0_25px_rgba(34,211,238,0.25)]"
-                            : answered
-                            ? "bg-emerald-500/20 border-emerald-400/30 text-emerald-300"
-                            : "bg-white/5 border-white/10 text-slate-400"
-                        }`}
-                      >
-                        {index + 1}
-                      </button>
-                    )
-                  })}
+                <div className="h-3 rounded-full bg-slate-800 overflow-hidden">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-cyan-400 to-blue-600"
+                    style={{ width: `${progress}%` }}
+                  />
                 </div>
-
-                <div className="mt-6 space-y-3 text-slate-300">
-                  <NavigatorLine icon={Target} label="Total" value={questions.length} />
-                  <NavigatorLine icon={CheckCircle} label="Answered" value={answers.length} />
-                  <NavigatorLine icon={Clock} label="Duration" value={`${durationMinutes} min`} />
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => finishAssessment(false)}
-                  disabled={finishing}
-                  className="w-full mt-6 px-5 py-3 rounded-xl bg-red-600 hover:bg-red-500 text-white font-semibold disabled:opacity-60"
-                >
-                  Finish Now
-                </button>
               </div>
+
+              <div className="grid grid-cols-5 gap-3">
+                {questions.map((question, index) => {
+                  const answered = answers.some((item) => item.id === question.id)
+                  const active = currentIndex === index
+
+                  return (
+                    <button
+                      key={question.id}
+                      type="button"
+                      onClick={() => setCurrentIndex(index)}
+                      className={`h-12 rounded-xl border font-semibold transition-all ${
+                        active
+                          ? "bg-cyan-500 border-cyan-300 text-white"
+                          : answered
+                          ? "bg-emerald-500/20 border-emerald-400/30 text-emerald-300"
+                          : "bg-white/5 border-white/10 text-slate-400"
+                      }`}
+                    >
+                      {index + 1}
+                    </button>
+                  )
+                })}
+              </div>
+
+              <div className="mt-6 space-y-3 text-slate-300">
+                <NavigatorLine icon={Target} label="Total" value={questions.length} />
+                <NavigatorLine icon={CheckCircle} label="Answered" value={answers.length} />
+                <NavigatorLine icon={Clock} label="Duration" value={`${durationMinutes} min`} />
+              </div>
+
+              <button
+                type="button"
+                onClick={() => finishAssessment(false)}
+                disabled={finishing}
+                className="w-full mt-6 px-5 py-3 rounded-xl bg-red-600 hover:bg-red-500 text-white font-semibold disabled:opacity-60"
+              >
+                Finish Now
+              </button>
             </aside>
           </div>
         )}
@@ -474,33 +463,48 @@ function OAAssessment() {
           <>
             <section
               onMouseMove={handleMouseMove}
-              className="glow-card relative overflow-hidden rounded-[3rem] p-10 text-center border border-emerald-400/20 bg-emerald-500/10"
+              className="glow-card rounded-[3rem] p-10 text-center border border-emerald-400/20 bg-emerald-500/10"
             >
-              <div className="absolute -top-28 -right-28 w-[420px] h-[420px] rounded-full bg-emerald-400/20 blur-[120px]" />
-              <div className="absolute -bottom-28 -left-28 w-[420px] h-[420px] rounded-full bg-cyan-500/20 blur-[120px]" />
+              <Star size={76} className="mx-auto text-emerald-400 mb-5" />
 
-              <div className="relative z-10">
-                <Star size={76} className="mx-auto text-emerald-400 mb-5" />
+              <h2 className="text-5xl font-black text-white mb-3">
+                Assessment Completed
+              </h2>
 
-                <h2 className="text-5xl font-black text-white mb-3">
-                  Assessment Completed
-                </h2>
+              <p className="text-slate-400 mb-6">
+                {result.verdict || "Your online assessment report is ready."}
+              </p>
 
-                <p className="text-slate-400 mb-6">
-                  {result.verdict || "Your online assessment report is ready."}
-                </p>
-
-                <p className="text-8xl font-black bg-gradient-to-r from-cyan-300 via-white to-purple-300 bg-clip-text text-transparent">
-                  {result.percentage || 0}%
-                </p>
-              </div>
+              <p className="text-8xl font-black bg-gradient-to-r from-cyan-300 via-white to-purple-300 bg-clip-text text-transparent">
+                {result.percentage || 0}%
+              </p>
             </section>
 
             <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
-              <StatCard title="Selection Chance" value={`${result.selectionChance || 0}%`} icon={Trophy} onMouseMove={handleMouseMove} />
-              <StatCard title="Aptitude" value={`${result.aptitudeScore || 0}%`} icon={Brain} onMouseMove={handleMouseMove} />
-              <StatCard title="Technical" value={`${result.technicalScore || 0}%`} icon={BarChart3} onMouseMove={handleMouseMove} />
-              <StatCard title="Coding" value={`${result.codingScore || 0}%`} icon={Star} onMouseMove={handleMouseMove} />
+              <StatCard
+                title="Selection Chance"
+                value={`${result.selectionChance || 0}%`}
+                icon={Trophy}
+                onMouseMove={handleMouseMove}
+              />
+              <StatCard
+                title="Aptitude"
+                value={`${result.aptitudeScore || 0}%`}
+                icon={Brain}
+                onMouseMove={handleMouseMove}
+              />
+              <StatCard
+                title="Technical"
+                value={`${result.technicalScore || 0}%`}
+                icon={BarChart3}
+                onMouseMove={handleMouseMove}
+              />
+              <StatCard
+                title="Coding"
+                value={`${result.codingScore || 0}%`}
+                icon={Star}
+                onMouseMove={handleMouseMove}
+              />
             </div>
 
             <section
@@ -515,14 +519,32 @@ function OAAssessment() {
                 <InfoBox label="Total Questions" value={result.totalQuestions} />
                 <InfoBox label="Attempted" value={result.attemptedQuestions} />
                 <InfoBox label="Correct" value={result.correctAnswers} />
-                <InfoBox label="Marks" value={`${result.obtainedMarks}/${result.totalMarks}`} />
+                <InfoBox
+                  label="Marks"
+                  value={`${result.obtainedMarks}/${result.totalMarks}`}
+                />
               </div>
             </section>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-              <ListCard title="Strengths" icon={Star} items={result.strengths || []} color="emerald" />
-              <ListCard title="Weaknesses" icon={AlertTriangle} items={result.weaknesses || []} color="red" />
-              <ListCard title="Recommendations" icon={Lightbulb} items={result.recommendations || []} color="blue" />
+              <ListCard
+                title="Strengths"
+                icon={Star}
+                items={result.strengths || []}
+                color="emerald"
+              />
+              <ListCard
+                title="Weaknesses"
+                icon={AlertTriangle}
+                items={result.weaknesses || []}
+                color="red"
+              />
+              <ListCard
+                title="Recommendations"
+                icon={Lightbulb}
+                items={result.recommendations || []}
+                color="blue"
+              />
             </div>
 
             <button
@@ -546,7 +568,11 @@ function Badge({ text, icon: Icon, tone = "cyan" }) {
   }
 
   return (
-    <span className={`px-4 py-2 rounded-xl border flex items-center gap-2 ${tones[tone] || tones.cyan}`}>
+    <span
+      className={`px-4 py-2 rounded-xl border flex items-center gap-2 ${
+        tones[tone] || tones.cyan
+      }`}
+    >
       {Icon && <Icon size={16} />}
       {text}
     </span>
