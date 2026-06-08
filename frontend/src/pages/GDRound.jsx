@@ -1,5 +1,6 @@
 import { useState } from "react"
 import axios from "axios"
+import API_BASE from "../config/api"
 
 import MainLayout from "../layouts/MainLayout.jsx"
 
@@ -14,7 +15,7 @@ import {
   Lightbulb
 } from "lucide-react"
 
-const API = "http://localhost:5000/api/gd-round"
+const API = `${API_BASE}/api/gd-round`
 
 const TOPIC_SUGGESTIONS = [
   "Impact of Artificial Intelligence on Jobs",
@@ -399,9 +400,7 @@ function Badge({ text, tone = "cyan" }) {
 
   return (
     <span
-      className={`px-4 py-2 rounded-xl border ${
-        tones[tone] || tones.cyan
-      }`}
+      className={`px-4 py-2 rounded-xl border ${tones[tone] || tones.cyan}`}
     >
       {text}
     </span>
