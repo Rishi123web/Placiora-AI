@@ -3,6 +3,7 @@ import MainLayout from "../layouts/MainLayout.jsx"
 import PageHeader from "../components/PageHeader.jsx"
 import FluidCard from "../components/FluidCard.jsx"
 import GlowButton from "../components/GlowButton.jsx"
+import API_BASE from "../config/api"
 
 import {
   Calendar,
@@ -23,7 +24,7 @@ import {
   FileText
 } from "lucide-react"
 
-const API_URL = "http://localhost:5000"
+const API_URL = API_BASE
 
 function History() {
   const [sessions, setSessions] = useState([])
@@ -180,10 +181,26 @@ function History() {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-6 gap-5">
-          <StatCard title="Total Sessions" value={sessions.length + gdRounds.length} icon={Brain} />
-          <StatCard title="Average Score" value={`${averageScore}%`} icon={Trophy} />
-          <StatCard title="Hiring Chance" value={`${averageHiring}%`} icon={Target} />
-          <StatCard title="Communication" value={`${averageCommunication}%`} icon={MessageCircle} />
+          <StatCard
+            title="Total Sessions"
+            value={sessions.length + gdRounds.length}
+            icon={Brain}
+          />
+          <StatCard
+            title="Average Score"
+            value={`${averageScore}%`}
+            icon={Trophy}
+          />
+          <StatCard
+            title="Hiring Chance"
+            value={`${averageHiring}%`}
+            icon={Target}
+          />
+          <StatCard
+            title="Communication"
+            value={`${averageCommunication}%`}
+            icon={MessageCircle}
+          />
           <StatCard title="Completed" value={completedCount} icon={CheckCircle} />
           <StatCard title="Live GD" value={gdRounds.length} icon={MessagesSquare} />
         </div>
@@ -241,25 +258,41 @@ function History() {
                     </div>
 
                     <div className="flex flex-wrap gap-3">
-                      <Badge icon={Trophy} text={`${session.totalScore || 0}%`} />
-                      <Badge icon={Target} text={`${session.hiringProbability || 0}% Hire`} />
+                      <Badge
+                        icon={Trophy}
+                        text={`${session.totalScore || 0}%`}
+                      />
+                      <Badge
+                        icon={Target}
+                        text={`${session.hiringProbability || 0}% Hire`}
+                      />
                     </div>
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 mt-5">
-                    <MetricBox label="Technical" value={session.technicalAverage || 0} />
-                    <MetricBox label="Communication" value={session.communicationAverage || 0} />
-                    <MetricBox label="Confidence" value={session.confidenceAverage || 0} />
+                    <MetricBox
+                      label="Technical"
+                      value={session.technicalAverage || 0}
+                    />
+                    <MetricBox
+                      label="Communication"
+                      value={session.communicationAverage || 0}
+                    />
+                    <MetricBox
+                      label="Confidence"
+                      value={session.confidenceAverage || 0}
+                    />
                     <MetricBox label="Clarity" value={session.clarityAverage || 0} />
-                    <MetricBox label="Problem Solving" value={session.problemSolvingAverage || 0} />
+                    <MetricBox
+                      label="Problem Solving"
+                      value={session.problemSolvingAverage || 0}
+                    />
                   </div>
 
                   <div className="flex flex-wrap gap-3 mt-5">
                     <button
                       type="button"
-                      onClick={() =>
-                        setExpandedInterview(open ? "" : sessionId)
-                      }
+                      onClick={() => setExpandedInterview(open ? "" : sessionId)}
                       className="inline-flex items-center gap-2 px-5 py-3 rounded-xl bg-white/10 hover:bg-white/15 text-white font-semibold"
                     >
                       {open ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
@@ -351,10 +384,19 @@ function History() {
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 mt-5">
-                    <MetricBox label="Communication" value={round.communicationScore || 0} />
+                    <MetricBox
+                      label="Communication"
+                      value={round.communicationScore || 0}
+                    />
                     <MetricBox label="Content" value={round.contentScore || 0} />
-                    <MetricBox label="Leadership" value={round.leadershipScore || 0} />
-                    <MetricBox label="Confidence" value={round.confidenceScore || 0} />
+                    <MetricBox
+                      label="Leadership"
+                      value={round.leadershipScore || 0}
+                    />
+                    <MetricBox
+                      label="Confidence"
+                      value={round.confidenceScore || 0}
+                    />
                     <MetricBox label="Overall" value={round.overallScore || 0} />
                   </div>
 
