@@ -2,6 +2,7 @@ import { useState } from "react"
 import axios from "axios"
 import { useNavigate } from "react-router-dom"
 import MainLayout from "../layouts/MainLayout.jsx"
+import API_BASE from "../config/api"
 
 import {
   FileText,
@@ -77,15 +78,11 @@ function ResumeAnalyzer() {
       formData.append("resume", file)
       formData.append("userId", userId || "")
 
-      const res = await axios.post(
-        "http://localhost:5000/api/resume/analyze",
-        formData,
-        {
-          headers: {
-            "Content-Type": "multipart/form-data"
-          }
+      const res = await axios.post(`${API_BASE}/api/resume/analyze`, formData, {
+        headers: {
+          "Content-Type": "multipart/form-data"
         }
-      )
+      })
 
       setResumeId(res.data.resumeId || "")
       setAnalysis(res.data.analysis || null)
@@ -111,13 +108,10 @@ function ResumeAnalyzer() {
       setMatching(true)
       setError("")
 
-      const res = await axios.post(
-        "http://localhost:5000/api/resume/match-jd",
-        {
-          resumeId,
-          jobDescription
-        }
-      )
+      const res = await axios.post(`${API_BASE}/api/resume/match-jd`, {
+        resumeId,
+        jobDescription
+      })
 
       setJdMatch(res.data.match || null)
     } catch (error) {
@@ -133,7 +127,7 @@ function ResumeAnalyzer() {
       setError("")
 
       const res = await axios.post(
-        "http://localhost:5000/api/interview/generate-from-resume",
+        `${API_BASE}/api/interview/generate-from-resume`,
         {
           userId,
           resumeId,
