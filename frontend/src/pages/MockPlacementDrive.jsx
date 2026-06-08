@@ -1,6 +1,7 @@
 import { useState } from "react"
 import axios from "axios"
 import MainLayout from "../layouts/MainLayout.jsx"
+import API_BASE from "../config/api"
 
 import {
   Trophy,
@@ -15,7 +16,7 @@ import {
   Users
 } from "lucide-react"
 
-const API = "http://localhost:5000/api/mock-placement"
+const API = `${API_BASE}/api/mock-placement`
 
 const COMPANIES = [
   "TCS",
