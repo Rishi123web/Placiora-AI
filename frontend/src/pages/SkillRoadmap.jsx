@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react"
 import axios from "axios"
 import MainLayout from "../layouts/MainLayout.jsx"
+import API_BASE from "../config/api"
 
 import {
   Brain,
@@ -13,7 +14,7 @@ import {
   Sparkles
 } from "lucide-react"
 
-const API = "http://localhost:5000/api/skill-roadmap"
+const API = `${API_BASE}/api/skill-roadmap`
 
 function SkillRoadmap() {
   const [roadmap, setRoadmap] = useState(null)
