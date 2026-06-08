@@ -1,6 +1,7 @@
 import { useState } from "react"
 import axios from "axios"
 import MainLayout from "../layouts/MainLayout.jsx"
+import API_BASE from "../config/api"
 
 import {
   Target,
@@ -16,7 +17,7 @@ import {
   Sparkles
 } from "lucide-react"
 
-const API = "http://localhost:5000/api/placement-readiness"
+const API = `${API_BASE}/api/placement-readiness`
 
 function PlacementReadiness() {
   const [resumeScore, setResumeScore] = useState(0)
