@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react"
 import axios from "axios"
 import MainLayout from "../layouts/MainLayout.jsx"
+import API_BASE from "../config/api"
 
 import {
   Mic,
@@ -20,7 +21,7 @@ import {
   Building2
 } from "lucide-react"
 
-const API = "http://localhost:5000/api/live-interview"
+const API = `${API_BASE}/api/live-interview`
 
 const ROLES = [
   "Frontend Developer",
