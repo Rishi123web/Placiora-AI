@@ -1,4 +1,5 @@
 import MainLayout from "../layouts/MainLayout.jsx"
+import API_BASE from "../config/api"
 
 import {
   User,
@@ -9,8 +10,6 @@ import {
   HelpCircle,
   Sparkles
 } from "lucide-react"
-
-const API_BASE = "http://localhost:5000"
 
 function Account() {
   const user = JSON.parse(localStorage.getItem("user") || "{}")
@@ -61,17 +60,24 @@ function Account() {
         </section>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-          <AccountCard icon={User} title="Name" value={user?.name || "User"} />
+          <AccountCard
+            icon={User}
+            title="Name"
+            value={user?.name || "User"}
+          />
+
           <AccountCard
             icon={Mail}
             title="Email"
             value={user?.email || "No email found"}
           />
+
           <AccountCard
             icon={Shield}
             title="Security"
             value="Email / Google login available"
           />
+
           <AccountCard
             icon={Settings}
             title="Preferences"
@@ -109,7 +115,9 @@ function Account() {
         </section>
 
         <section className="glow-card rounded-[2.5rem] border border-purple-400/20 bg-purple-500/10 p-8">
-          <h2 className="text-3xl font-bold text-white mb-5">Support</h2>
+          <h2 className="text-3xl font-bold text-white mb-5">
+            Support
+          </h2>
 
           <p className="text-slate-300 flex items-center gap-3 mb-4">
             <HelpCircle className="text-cyan-300" />
@@ -134,7 +142,9 @@ function AccountCard({ icon: Icon, title, value }) {
     <div className="glow-card rounded-[2rem] border border-cyan-400/10 bg-white/[0.04] p-6">
       <Icon size={30} className="text-cyan-300 mb-4" />
 
-      <p className="text-slate-400">{title}</p>
+      <p className="text-slate-400">
+        {title}
+      </p>
 
       <h3 className="text-white text-xl font-bold mt-2 break-words">
         {value}
