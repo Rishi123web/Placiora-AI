@@ -2,6 +2,7 @@ import { useEffect, useState } from "react"
 import axios from "axios"
 import { useLocation } from "react-router-dom"
 import MainLayout from "../layouts/MainLayout.jsx"
+import API_BASE from "../config/api"
 
 import {
   Brain,
@@ -178,8 +179,8 @@ function Interview() {
 
       const endpoint =
         form.mode === "jd"
-          ? "http://localhost:5000/api/interview/generate-from-jd"
-          : "http://localhost:5000/api/interview/generate"
+          ? `${API_BASE}/api/interview/generate-from-jd`
+          : `${API_BASE}/api/interview/generate`
 
       const body =
         form.mode === "jd"
@@ -239,14 +240,11 @@ function Interview() {
         error: ""
       }))
 
-      const res = await axios.post(
-        "http://localhost:5000/api/interview/answer",
-        {
-          sessionId: page.interviewId,
-          question: page.questions[page.currentIndex],
-          answer: page.answer
-        }
-      )
+      const res = await axios.post(`${API_BASE}/api/interview/answer`, {
+        sessionId: page.interviewId,
+        question: page.questions[page.currentIndex],
+        answer: page.answer
+      })
 
       setPage((prev) => ({
         ...prev,
