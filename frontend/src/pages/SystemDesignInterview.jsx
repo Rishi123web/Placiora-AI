@@ -1,6 +1,7 @@
 import { useState } from "react"
 import axios from "axios"
 import MainLayout from "../layouts/MainLayout.jsx"
+import API_BASE from "../config/api"
 
 import {
   Brain,
@@ -11,7 +12,7 @@ import {
   Sparkles
 } from "lucide-react"
 
-const API = "http://localhost:5000/api/system-design"
+const API = `${API_BASE}/api/system-design`
 
 function SystemDesignInterview() {
   const user = JSON.parse(localStorage.getItem("user") || "{}")
