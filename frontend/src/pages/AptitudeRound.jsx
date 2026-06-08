@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react"
 import axios from "axios"
 
 import MainLayout from "../layouts/MainLayout.jsx"
+import API_BASE from "../config/api"
 
 import {
   Brain,
@@ -19,21 +20,17 @@ function AptitudeRound() {
 
   const [category, setCategory] = useState("Mixed")
   const [difficulty, setDifficulty] = useState("Beginner")
-
   const [sessionId, setSessionId] = useState("")
   const [questions, setQuestions] = useState([])
   const [selectedAnswers, setSelectedAnswers] = useState([])
-
   const [result, setResult] = useState(null)
   const [timeLeft, setTimeLeft] = useState(300)
   const [started, setStarted] = useState(false)
-
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
 
   const handleGlowMove = (e) => {
     const rect = e.currentTarget.getBoundingClientRect()
-
     e.currentTarget.style.setProperty("--x", `${e.clientX - rect.left}px`)
     e.currentTarget.style.setProperty("--y", `${e.clientY - rect.top}px`)
   }
@@ -72,13 +69,10 @@ function AptitudeRound() {
         return
       }
 
-      const response = await axios.post(
-        "http://localhost:5000/api/aptitude/submit",
-        {
-          sessionId,
-          answers: selectedAnswers
-        }
-      )
+      const response = await axios.post(`${API_BASE}/api/aptitude/submit`, {
+        sessionId,
+        answers: selectedAnswers
+      })
 
       setResult(response.data)
     } catch (err) {
@@ -116,14 +110,11 @@ function AptitudeRound() {
       setError("")
       setResult(null)
 
-      const response = await axios.post(
-        "http://localhost:5000/api/aptitude/start",
-        {
-          userId,
-          category,
-          difficulty
-        }
-      )
+      const response = await axios.post(`${API_BASE}/api/aptitude/start`, {
+        userId,
+        category,
+        difficulty
+      })
 
       const fetchedQuestions = response.data.questions || []
 
@@ -283,7 +274,6 @@ function AptitudeRound() {
                             : "bg-slate-900/70 border-white/10 text-slate-300 hover:border-cyan-400/30 hover:bg-cyan-500/5 hover:text-white"
                         }`}
                       >
-                        <span className="pointer-events-none absolute inset-0 opacity-0 hover:opacity-100 transition-opacity duration-300 bg-[radial-gradient(circle_at_var(--x)_var(--y),rgba(34,211,238,0.18),transparent_40%)]" />
                         <span className="relative z-10">{option}</span>
                       </button>
                     ))}
