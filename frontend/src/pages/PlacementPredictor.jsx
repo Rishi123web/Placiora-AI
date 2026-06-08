@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react"
 import axios from "axios"
 import MainLayout from "../layouts/MainLayout.jsx"
+import API_BASE from "../config/api"
 
 import {
   Brain,
@@ -12,7 +13,7 @@ import {
   RotateCw
 } from "lucide-react"
 
-const API = "http://localhost:5000/api/company-prediction"
+const API = `${API_BASE}/api/company-prediction`
 
 function PlacementPredictor() {
   const [prediction, setPrediction] = useState(null)
@@ -91,13 +92,9 @@ function PlacementPredictor() {
           onMouseMove={handleMouseMove}
           className="glow-card relative overflow-hidden rounded-[3rem] border border-cyan-400/20 bg-slate-950/90 p-8 shadow-[0_0_120px_rgba(34,211,238,0.12)]"
         >
-          <div className="absolute -top-32 -right-32 w-[520px] h-[520px] rounded-full bg-purple-500/20 blur-[140px]" />
-          <div className="absolute -bottom-40 -left-40 w-[520px] h-[520px] rounded-full bg-cyan-600/20 blur-[140px]" />
-          <div className="absolute inset-0 opacity-0 hover:opacity-100 transition-opacity duration-500 bg-[radial-gradient(circle_at_var(--x)_var(--y),rgba(34,211,238,0.16),transparent_35%)]" />
-
           <div className="relative z-10 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
             <div className="flex items-center gap-5">
-              <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-purple-500 to-pink-700 flex items-center justify-center shadow-[0_0_45px_rgba(168,85,247,0.35)]">
+              <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-purple-500 to-pink-700 flex items-center justify-center">
                 <Brain className="text-white" size={34} />
               </div>
 
@@ -165,36 +162,17 @@ function PlacementPredictor() {
           <>
             <section
               onMouseMove={handleMouseMove}
-              className="glow-card relative overflow-hidden rounded-[3rem] p-10 text-center border border-cyan-400/20 bg-cyan-500/10"
+              className="glow-card rounded-[3rem] p-10 text-center border border-cyan-400/20 bg-cyan-500/10"
             >
-              <div className="absolute -top-28 -right-28 w-[420px] h-[420px] rounded-full bg-purple-400/20 blur-[120px]" />
-              <div className="absolute -bottom-28 -left-28 w-[420px] h-[420px] rounded-full bg-cyan-500/20 blur-[120px]" />
+              <Trophy size={76} className="mx-auto text-yellow-300 mb-5" />
 
-              <div className="relative z-10">
-                <Trophy size={76} className="mx-auto text-yellow-300 mb-5" />
+              <p className="text-purple-300 font-semibold mb-2">
+                Overall Placement Probability
+              </p>
 
-                <p className="text-purple-300 font-semibold mb-2">
-                  Overall Placement Probability
-                </p>
-
-                <h2 className="text-8xl font-black bg-gradient-to-r from-cyan-300 via-white to-purple-300 bg-clip-text text-transparent">
-                  {prediction.placementProbability || 0}%
-                </h2>
-
-                <div className="mt-6 max-w-3xl mx-auto">
-                  <div className="h-4 rounded-full bg-slate-800 overflow-hidden">
-                    <div
-                      className="h-full rounded-full bg-gradient-to-r from-cyan-400 to-purple-600"
-                      style={{
-                        width: `${Math.min(
-                          Number(prediction.placementProbability) || 0,
-                          100
-                        )}%`
-                      }}
-                    />
-                  </div>
-                </div>
-              </div>
+              <h2 className="text-8xl font-black bg-gradient-to-r from-cyan-300 via-white to-purple-300 bg-clip-text text-transparent">
+                {prediction.placementProbability || 0}%
+              </h2>
             </section>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
@@ -257,7 +235,7 @@ function PlacementPredictor() {
               title="AI Recommendations"
               icon={Lightbulb}
               items={prediction.recommendations || []}
-              empty="Keep practicing using Prep AI modules."
+              empty="Keep practicing using Placiora AI modules."
               color="emerald"
               onMouseMove={handleMouseMove}
             />
