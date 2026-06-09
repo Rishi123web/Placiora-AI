@@ -1,57 +1,11 @@
 import express from "express"
 import mongoose from "mongoose"
-import fs from "fs/promises"
-import path from "path"
-import { fileURLToPath } from "url"
-import { exec } from "child_process"
-import { promisify } from "util"
 
 import CodingSession from "../models/CodingSession.js"
 import { evaluateCodingAnswerAI } from "../utils/aiEvaluator.js"
+import { runJudge0 } from "../utils/judge0.js"
 
 const router = express.Router()
-const execAsync = promisify(exec)
-
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = path.dirname(__filename)
-const TEMP_DIR = path.join(__dirname, "../temp-code")
-
-const MSYS_BIN = process.env.MSYS_BIN || "C:\\msys64\\ucrt64\\bin"
-
-const withMsysPath = (command) => {
-  return `set "PATH=${MSYS_BIN};%PATH%" && ${command}`
-}
-
-const LOCAL_RUNNERS = {
-  javascript: {
-    file: "main.js",
-    command: "node main.js"
-  },
-  python: {
-    file: "main.py",
-    command: "python main.py"
-  },
-  java: {
-    file: "Main.java",
-    command: "javac Main.java && java Main"
-  },
-  c: {
-    file: "main.c",
-    command: withMsysPath(
-      `"${MSYS_BIN}\\gcc.exe" main.c -o main.exe && .\\main.exe`
-    )
-  },
-  cpp: {
-    file: "main.cpp",
-    command: withMsysPath(
-      `"${MSYS_BIN}\\g++.exe" main.cpp -o main.exe && .\\main.exe`
-    )
-  },
-  go: {
-    file: "main.go",
-    command: "go run main.go"
-  }
-}
 
 const LANGUAGE_STARTERS = {
   javascript: `console.log("Hello World")`,
@@ -503,27 +457,56 @@ func main() {
   ]
 }
 
+const normalizeLanguage = (language = "javascript") => {
+  const map = {
+    JavaScript: "javascript",
+    Javascript: "javascript",
+    javascript: "javascript",
+    Python: "python",
+    python: "python",
+    Java: "java",
+    java: "java",
+    C: "c",
+    c: "c",
+    "C++": "cpp",
+    CPP: "cpp",
+    Cpp: "cpp",
+    cpp: "cpp",
+    Go: "go",
+    go: "go"
+  }
+
+  return map[language] || "javascript"
+}
+
 const prepareProblemForLanguage = (problem, language = "javascript") => {
+  const safeLanguage = normalizeLanguage(language)
+
   return {
     ...problem,
-    language,
+    language: safeLanguage,
     starterCode:
-      problem.languageStarters?.[language] ||
+      problem.languageStarters?.[safeLanguage] ||
       problem.languageStarters?.javascript ||
-      LANGUAGE_STARTERS[language] ||
+      LANGUAGE_STARTERS[safeLanguage] ||
       LANGUAGE_STARTERS.javascript
   }
 }
 
 const createHints = ({ language, errorText }) => {
+  const safeLanguage = normalizeLanguage(language)
   const text = String(errorText || "").toLowerCase()
   const hints = []
 
   if (!text.trim()) return hints
 
-  if (text.includes("not recognized")) {
-    hints.push("Compiler is not installed or not added to PATH.")
-    hints.push("Restart backend after fixing PATH.")
+  if (
+    text.includes("not found") ||
+    text.includes("connection refused") ||
+    text.includes("econnrefused")
+  ) {
+    hints.push("Judge0 server is not reachable. Make sure Docker Judge0 is running.")
+    hints.push("Check JUDGE0_URL in backend .env.")
   }
 
   if (text.includes("expected") || text.includes("syntax")) {
@@ -538,26 +521,26 @@ const createHints = ({ language, errorText }) => {
     hints.push("Make sure your program has a valid main function/class.")
   }
 
-  if (language === "java") {
+  if (safeLanguage === "java") {
     hints.push("Java class name must be Main.")
     hints.push("Use: class Main { public static void main(String[] args) { } }")
   }
 
-  if (language === "python") {
+  if (safeLanguage === "python") {
     hints.push("Check indentation carefully.")
     hints.push("Python uses : after function/if/for/while blocks.")
   }
 
-  if (language === "javascript") {
+  if (safeLanguage === "javascript") {
     hints.push("Use console.log(...) to print output.")
   }
 
-  if (language === "c" || language === "cpp") {
+  if (safeLanguage === "c" || safeLanguage === "cpp") {
     hints.push("Check #include statements and missing semicolons.")
     hints.push("Make sure main returns int.")
   }
 
-  if (language === "go") {
+  if (safeLanguage === "go") {
     hints.push("Go code must start with package main.")
     hints.push("Use fmt.Println(...) and import \"fmt\".")
   }
@@ -568,7 +551,7 @@ const createHints = ({ language, errorText }) => {
 router.get("/problem", (req, res) => {
   try {
     const difficulty = req.query.difficulty || "Beginner"
-    const language = req.query.language || "javascript"
+    const language = normalizeLanguage(req.query.language || "javascript")
     const list = problems[difficulty] || problems.Beginner
     const randomProblem = list[Math.floor(Math.random() * list.length)]
 
@@ -586,10 +569,9 @@ router.get("/problem", (req, res) => {
 })
 
 router.post("/run", async (req, res) => {
-  let folderPath = ""
-
   try {
-    const { code, language, stdin = "" } = req.body
+    const { code, stdin = "", input = "" } = req.body
+    const language = normalizeLanguage(req.body.language)
 
     if (!code || !language) {
       return res.status(400).json({
@@ -598,75 +580,51 @@ router.post("/run", async (req, res) => {
       })
     }
 
-    const runner = LOCAL_RUNNERS[language]
-
-    if (!runner) {
-      return res.status(400).json({
-        success: false,
-        message: "This language is not supported by local runner.",
-        hints: ["Choose JavaScript, Python, Java, C, C++ or Go."]
-      })
-    }
-
-    folderPath = path.join(
-      TEMP_DIR,
-      `${Date.now()}-${Math.random().toString(36).slice(2)}`
-    )
-
-    await fs.mkdir(folderPath, { recursive: true })
-    await fs.writeFile(path.join(folderPath, runner.file), code)
-
-    if (stdin) {
-      await fs.writeFile(path.join(folderPath, "input.txt"), stdin)
-    }
-
-    const command = stdin ? `${runner.command} < input.txt` : runner.command
-
-    const { stdout, stderr } = await execAsync(command, {
-      cwd: folderPath,
-      timeout: 30000,
-      windowsHide: true,
-      maxBuffer: 1024 * 1024 * 10,
-      env: {
-        ...process.env,
-        PATH: `${MSYS_BIN};${process.env.PATH}`
-      }
+    const result = await runJudge0({
+      code,
+      language,
+      stdin: stdin || input || ""
     })
 
     res.json({
       success: true,
-      stdout,
-      stderr,
-      compile_output: "",
-      message: "",
-      hints: [],
-      status: {
-        id: 3,
-        description: "Accepted"
-      }
+      stdout: result.stdout || "",
+      stderr: result.stderr || "",
+      compile_output: result.compile_output || "",
+      message: result.message || "",
+      hints: createHints({
+        language,
+        errorText:
+          result.stderr || result.compile_output || result.message || ""
+      }),
+      status: result.status || {
+        id: 0,
+        description: "Unknown"
+      },
+      time: result.time,
+      memory: result.memory
     })
   } catch (error) {
-    const errorText = error.stderr || error.stdout || error.message
+    const errorText =
+      error.response?.data?.message ||
+      error.response?.data?.error ||
+      error.message
 
     res.json({
       success: true,
       stdout: "",
-      stderr: error.stderr || "",
-      compile_output: error.stdout || "",
-      message: error.message,
+      stderr: "",
+      compile_output: "",
+      message: errorText,
       hints: createHints({
         language: req.body?.language,
         errorText
       }),
       status: {
-        id: 6,
-        description: "Runtime/Compile Error"
+        id: 13,
+        description: "Judge0 Connection Error"
       }
     })
-  } finally {
-    if (folderPath) {
-      fs.rm(folderPath, { recursive: true, force: true }).catch(() => {})
-    }
   }
 })
 
@@ -682,12 +640,13 @@ router.post("/submit", async (req, res) => {
       })
     }
 
+    const safeLanguage = normalizeLanguage(language)
     const safeTestResults = Array.isArray(testResults) ? testResults : []
 
     const result = await evaluateCodingAnswerAI({
       problem: {
         ...problem,
-        language
+        language: safeLanguage
       },
       code,
       testResults: safeTestResults
@@ -703,7 +662,7 @@ router.post("/submit", async (req, res) => {
       difficulty: problem.difficulty || "",
       category: problem.category || "",
       description: problem.description || "",
-      language,
+      language: safeLanguage,
       code,
       score: result.score,
       feedback: result.feedback,
