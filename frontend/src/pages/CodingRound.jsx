@@ -136,6 +136,40 @@ function CodingRound() {
     card.style.setProperty("--y", `${e.clientY - rect.top}px`)
   }
 
+  const getJudgeOutput = (data) => {
+    return (
+      data.stdout ||
+      data.stderr ||
+      data.compile_output ||
+      data.message ||
+      "No Output"
+    )
+  }
+
+  const isAccepted = (data) => {
+    return data.status?.id === 3 || data.status?.description === "Accepted"
+  }
+
+  const runOneTest = async ({ input = "", expectedOutput = "" }) => {
+    const response = await axios.post(`${API}/run`, {
+      code,
+      language,
+      stdin: input,
+      input
+    })
+
+    const data = response.data
+    const finalOutput = getJudgeOutput(data)
+    const cleanOutput = String(finalOutput || "").trim()
+    const cleanExpected = String(expectedOutput || "").trim()
+
+    return {
+      data,
+      finalOutput,
+      passed: isAccepted(data) && cleanOutput === cleanExpected
+    }
+  }
+
   const runCode = async () => {
     if (!code.trim()) {
       setError("Please write code before running.")
@@ -150,38 +184,61 @@ function CodingRound() {
       setHints([])
       setTestResults([])
 
-      const response = await axios.post(`${API}/run`, {
-        code,
-        language,
-        stdin
-      })
+      const tests =
+        stdin.trim() || !problem?.testCases?.length
+          ? [
+              {
+                input: stdin,
+                expectedOutput: problem?.expectedOutput || "Manual Run"
+              }
+            ]
+          : problem.testCases
 
-      const data = response.data
+      const allResults = []
 
-      const finalOutput =
-        data.stdout ||
-        data.stderr ||
-        data.compile_output ||
-        data.message ||
-        "No Output"
+      for (let i = 0; i < tests.length; i++) {
+        const testCase = tests[i]
+        const runResult = await runOneTest({
+          input: stdin.trim() ? stdin : testCase.input,
+          expectedOutput: testCase.expectedOutput
+        })
 
-      const receivedHints = Array.isArray(data.hints) ? data.hints : []
+        const runtimeError =
+          runResult.data.stderr ||
+          runResult.data.compile_output ||
+          runResult.data.message ||
+          ""
 
-      setOutput(finalOutput)
-      setHints(receivedHints)
+        allResults.push({
+          index: i + 1,
+          input: stdin.trim() ? stdin : testCase.input,
+          expectedOutput: testCase.expectedOutput,
+          actualOutput: runResult.finalOutput,
+          runtimeError,
+          passed: runResult.passed
+        })
 
-      setTestResults([
-        {
-          index: 1,
-          input: stdin || "Custom input not provided",
-          expectedOutput: problem?.expectedOutput || "Manual Run",
-          actualOutput: finalOutput,
-          runtimeError: data.stderr || data.compile_output || data.message || "",
-          passed:
-            problem?.expectedOutput &&
-            finalOutput.trim() === String(problem.expectedOutput).trim()
+        if (Array.isArray(runResult.data.hints) && runResult.data.hints.length) {
+          setHints(runResult.data.hints)
         }
-      ])
+      }
+
+      const combinedOutput = allResults
+        .map(
+          (item) =>
+            `Test Case ${item.index}: ${
+              item.passed ? "Passed" : "Failed"
+            }\nOutput: ${item.actualOutput}`
+        )
+        .join("\n\n")
+
+      setOutput(combinedOutput || "No Output")
+      setTestResults(allResults)
+
+      const firstFailed = allResults.find((item) => !item.passed)
+      if (firstFailed?.runtimeError) {
+        setHints((prev) => [...new Set(prev)].slice(0, 5))
+      }
     } catch (err) {
       const message =
         err.response?.data?.message ||
@@ -190,7 +247,7 @@ function CodingRound() {
 
       const receivedHints = Array.isArray(err.response?.data?.hints)
         ? err.response.data.hints
-        : ["Check if your backend server is running on port 5000."]
+        : ["Check if backend is running and JUDGE0_URL is correct."]
 
       setError(message)
       setOutput(message)
@@ -271,7 +328,7 @@ function CodingRound() {
 
                 <p className="text-slate-400 mt-3 leading-7 max-w-4xl">
                   Practice coding questions with a polished editor, test cases,
-                  AI review, local compiler execution and smart correction hints.
+                  AI review, Judge0 execution and smart correction hints.
                 </p>
               </div>
             </div>
@@ -443,12 +500,12 @@ function CodingRound() {
                         Expected: {test.expectedOutput}
                       </p>
 
-                      <p className="text-slate-300">
+                      <p className="text-slate-300 whitespace-pre-wrap">
                         Your Output: {test.actualOutput}
                       </p>
 
                       {test.runtimeError && (
-                        <p className="text-red-300 mt-2">
+                        <p className="text-red-300 mt-2 whitespace-pre-wrap">
                           Error: {test.runtimeError}
                         </p>
                       )}
@@ -509,7 +566,7 @@ function CodingRound() {
                   </h2>
 
                   <p className="text-slate-400 text-sm">
-                    Local runner enabled for JavaScript, Python, Java, C, C++
+                    Judge0 runner enabled for JavaScript, Python, Java, C, C++
                     and Go.
                   </p>
                 </div>
