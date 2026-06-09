@@ -26,7 +26,11 @@ export async function runJudge0({ code, language, stdin = "" }) {
       stdin
     },
     {
-      timeout: 30000
+      timeout: 30000,
+      headers: {
+        "Content-Type": "application/json",
+        "ngrok-skip-browser-warning": "true"
+      }
     }
   )
 
