@@ -333,23 +333,24 @@ function AIAssistantAvatar() {
   }
 
   async function transcribeAudio(blob) {
-    const formData = new FormData()
-    formData.append("audio", blob, "sifra-audio.webm")
+  const formData = new FormData()
 
-    const res = await fetch(`${API_URL}/transcribe`, {
-      method: "POST",
-      body: formData
-    })
+  formData.append("audio", blob, "voice.webm")
 
-    const data = await res.json()
+  const res = await fetch(`${API_URL}/transcribe`, {
+    method: "POST",
+    body: formData
+  })
 
-    if (!res.ok) {
-      throw new Error(data?.message || "Transcription failed")
-    }
+  const data = await res.json()
 
-    return data.text || ""
+  if (!res.ok || !data.success) {
+    console.error("Transcription API Error:", data)
+    throw new Error(data?.message || data?.error || "Transcription failed")
   }
 
+  return data.text || ""
+}
   async function startGroqRecording() {
     try {
       stopSpeaking()
