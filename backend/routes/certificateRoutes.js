@@ -3,6 +3,9 @@ import Certificate from "../models/Certificate.js"
 
 const router = express.Router()
 
+const FRONTEND_URL =
+  process.env.CLIENT_URL || "https://placiora-ai-h2oh.vercel.app"
+
 router.post("/generate", async (req, res) => {
   try {
     const { userId, userName, userEmail, score } = req.body
@@ -23,16 +26,22 @@ router.post("/generate", async (req, res) => {
       })
     }
 
-    const finalScore = Number(score) || 75
+    const finalScore = Math.min(Math.max(Number(score) || 85, 0), 100)
 
     const level =
       finalScore >= 90
         ? "Outstanding"
-        : finalScore >= 75
+        : finalScore >= 80
         ? "Excellent"
+        : finalScore >= 70
+        ? "Advanced"
         : finalScore >= 60
-        ? "Good"
+        ? "Intermediate"
         : "Beginner"
+
+    const certificateId = `PLACIORA-${Date.now()}-${Math.floor(
+      1000 + Math.random() * 9000
+    )}`
 
     const certificate = await Certificate.create({
       userId,
@@ -40,9 +49,18 @@ router.post("/generate", async (req, res) => {
       userEmail,
       score: finalScore,
       level,
-      certificateId: `PLACIORA-${Date.now()}-${Math.floor(
-        Math.random() * 9999
-      )}`
+      certificateId,
+      issuer: "Placiora AI",
+      program: "Placement Preparation Program",
+      duration: "40 Learning Hours",
+      credentialUrl: `${FRONTEND_URL}/verify/${certificateId}`,
+      skills: [
+        "Technical Interviews",
+        "Coding Assessments",
+        "Resume Optimization",
+        "HR Interview Preparation",
+        "Career Readiness"
+      ]
     })
 
     res.status(201).json({
@@ -71,7 +89,34 @@ router.get("/:userId", async (req, res) => {
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: "Failed to fetch certificate"
+      message: "Failed to fetch certificate",
+      error: error.message
+    })
+  }
+})
+
+router.get("/verify/:certificateId", async (req, res) => {
+  try {
+    const certificate = await Certificate.findOne({
+      certificateId: req.params.certificateId
+    })
+
+    if (!certificate) {
+      return res.status(404).json({
+        success: false,
+        message: "Certificate not found"
+      })
+    }
+
+    res.json({
+      success: true,
+      certificate
+    })
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Verification failed",
+      error: error.message
     })
   }
 })

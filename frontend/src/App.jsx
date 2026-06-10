@@ -28,6 +28,7 @@ import RecruiterDashboard from "./pages/RecruiterDashboard.jsx"
 
 import History from "./pages/History.jsx"
 import Certificate from "./pages/Certificate.jsx"
+import CertificateDownload from "./pages/CertificateDownload.jsx"
 
 import About from "./pages/About.jsx"
 import HelpSupport from "./pages/HelpSupport.jsx"
@@ -69,6 +70,10 @@ function App() {
 
         <Route path="/history" element={<History />} />
         <Route path="/certificate" element={<Certificate />} />
+        <Route
+          path="/certificate/download"
+          element={<CertificateDownload />}
+        />
 
         <Route path="/about" element={<About />} />
         <Route path="/help" element={<HelpSupport />} />
