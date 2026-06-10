@@ -50,7 +50,10 @@ const CLIENT_URL =
 const MONGO_URI = process.env.MONGO_URI?.trim()
 
 console.log("GROQ API:", process.env.GROQ_API_KEY ? "Loaded" : "Missing")
-console.log("JUDGE0 URL:", process.env.JUDGE0_URL || "http://localhost:2358")
+console.log(
+  "PISTON URL:",
+  process.env.PISTON_URL || "http://localhost:2000/api/v2/execute"
+)
 console.log(
   "Google OAuth:",
   process.env.GOOGLE_CLIENT_ID?.trim() &&
