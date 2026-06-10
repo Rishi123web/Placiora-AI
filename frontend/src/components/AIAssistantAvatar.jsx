@@ -64,7 +64,6 @@ function AIAssistantAvatar() {
   const mediaRecorderRef = useRef(null)
   const audioChunksRef = useRef([])
   const audioStreamRef = useRef(null)
-
   const messagesEndRef = useRef(null)
 
   const pageMode = useMemo(
@@ -191,6 +190,7 @@ function AIAssistantAvatar() {
     }
 
     utterance.volume = 1
+
     utterance.onstart = () => setSpeaking(true)
     utterance.onend = () => setSpeaking(false)
     utterance.onerror = () => setSpeaking(false)
@@ -232,13 +232,17 @@ function AIAssistantAvatar() {
       ["coding", "/coding-round", "Opening Coding Round."],
       ["aptitude", "/aptitude", "Opening Aptitude Round."],
       ["oa", "/oa-assessment", "Opening OA Simulator."],
-      ["placement readiness", "/placement-readiness", "Opening Placement Readiness."],
+      [
+        "placement readiness",
+        "/placement-readiness",
+        "Opening Placement Readiness."
+      ],
       ["roadmap", "/skill-roadmap", "Opening Skill Roadmap."],
       ["predictor", "/placement-predictor", "Opening Placement Predictor."],
       ["mock placement", "/mock-placement", "Opening Mock Placement."],
       ["recruiter", "/recruiter-dashboard", "Opening Recruiter Dashboard."],
-      ["history", "/history", "Opening History."],
       ["certificate", "/certificate", "Opening Certificate."],
+      ["history", "/history", "Opening History."],
       ["dashboard", "/dashboard", "Opening Dashboard."],
       ["interview", "/interview", "Opening AI Interview."]
     ]
@@ -317,8 +321,8 @@ function AIAssistantAvatar() {
 
       const data = await res.json()
 
-      if (!res.ok) {
-        throw new Error(data?.reply || "Sifra request failed")
+      if (!res.ok || !data.success) {
+        throw new Error(data?.reply || data?.error || "Sifra request failed")
       }
 
       addAssistantReply(
@@ -333,26 +337,45 @@ function AIAssistantAvatar() {
   }
 
   async function transcribeAudio(blob) {
-  const formData = new FormData()
+    const formData = new FormData()
 
-  formData.append("audio", blob, "voice.webm")
+    formData.append("audio", blob, "voice.webm")
 
-  const res = await fetch(`${API_URL}/transcribe`, {
-    method: "POST",
-    body: formData
-  })
+    const res = await fetch(`${API_URL}/transcribe`, {
+      method: "POST",
+      body: formData
+    })
 
-  const data = await res.json()
+    const data = await res.json()
 
-  if (!res.ok || !data.success) {
-    console.error("Transcription API Error:", data)
-    throw new Error(data?.message || data?.error || "Transcription failed")
+    if (!res.ok || !data.success) {
+      console.error("Transcription API Error:", data)
+      throw new Error(data?.message || data?.error || "Transcription failed")
+    }
+
+    return data.text || ""
   }
 
-  return data.text || ""
-}
+  function getSupportedMimeType() {
+    const types = [
+      "audio/webm;codecs=opus",
+      "audio/webm",
+      "audio/mp4",
+      "audio/ogg;codecs=opus"
+    ]
+
+    return types.find((type) => MediaRecorder.isTypeSupported(type)) || ""
+  }
+
   async function startGroqRecording() {
     try {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        addAssistantReply(
+          "Microphone recording is not supported in this browser."
+        )
+        return
+      }
+
       stopSpeaking()
 
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -366,11 +389,11 @@ function AIAssistantAvatar() {
       audioStreamRef.current = stream
       audioChunksRef.current = []
 
-      const mimeType = MediaRecorder.isTypeSupported("audio/webm")
-        ? "audio/webm"
-        : "audio/mp4"
+      const mimeType = getSupportedMimeType()
 
-      const recorder = new MediaRecorder(stream, { mimeType })
+      const recorder = mimeType
+        ? new MediaRecorder(stream, { mimeType })
+        : new MediaRecorder(stream)
 
       mediaRecorderRef.current = recorder
 
@@ -380,18 +403,29 @@ function AIAssistantAvatar() {
         }
       }
 
+      recorder.onerror = (event) => {
+        console.error("MediaRecorder Error:", event)
+        setListening(false)
+        addAssistantReply("Audio recording failed. Please try again.")
+      }
+
       recorder.onstop = async () => {
         try {
+          setListening(false)
           setLoading(true)
 
+          const finalMimeType = recorder.mimeType || mimeType || "audio/webm"
+
           const audioBlob = new Blob(audioChunksRef.current, {
-            type: mimeType
+            type: finalMimeType
           })
 
           audioChunksRef.current = []
 
-          if (audioBlob.size < 1000) {
-            addAssistantReply("I couldn't hear anything clearly. Please try again.")
+          if (audioBlob.size < 1200) {
+            addAssistantReply(
+              "I couldn't hear anything clearly. Please speak a little longer and try again."
+            )
             return
           }
 
@@ -417,7 +451,7 @@ function AIAssistantAvatar() {
         }
       }
 
-      recorder.start()
+      recorder.start(250)
       setListening(true)
     } catch (error) {
       console.error("Mic Permission Error:", error)
