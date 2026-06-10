@@ -12,6 +12,10 @@ const FRONTEND_URL =
   process.env.CLIENT_URL ||
   "http://localhost:5173"
 
+const GOOGLE_CALLBACK_URL =
+  process.env.GOOGLE_CALLBACK_URL ||
+  "http://localhost:5000/api/oauth/google/callback"
+
 let googleStrategyRegistered = false
 
 const getGoogleConfig = () => {
@@ -58,13 +62,8 @@ const findOrCreateUser = async ({ name, email }) => {
 const registerGoogleStrategy = () => {
   const { clientID, clientSecret, ready } = getGoogleConfig()
 
-  if (!ready) {
-    return false
-  }
-
-  if (googleStrategyRegistered) {
-    return true
-  }
+  if (!ready) return false
+  if (googleStrategyRegistered) return true
 
   passport.use(
     "google",
@@ -72,7 +71,7 @@ const registerGoogleStrategy = () => {
       {
         clientID,
         clientSecret,
-        callbackURL: "http://localhost:5000/api/oauth/google/callback"
+        callbackURL: GOOGLE_CALLBACK_URL
       },
       async (accessToken, refreshToken, profile, done) => {
         try {
@@ -93,12 +92,10 @@ const registerGoogleStrategy = () => {
 
   googleStrategyRegistered = true
   console.log("Google Strategy Registered")
+  console.log("Google Callback URL:", GOOGLE_CALLBACK_URL)
 
   return true
 }
-
-passport.serializeUser((user, done) => done(null, user))
-passport.deserializeUser((user, done) => done(null, user))
 
 router.get("/test", (req, res) => {
   const config = getGoogleConfig()
@@ -108,26 +105,27 @@ router.get("/test", (req, res) => {
     message: "Google OAuth route working",
     googleLoaded: config.ready,
     strategyRegistered: googleStrategyRegistered,
+    callbackUrl: GOOGLE_CALLBACK_URL,
+    frontendUrl: FRONTEND_URL,
     clientIdExists: Boolean(config.clientID),
     secretExists: Boolean(config.clientSecret)
   })
 })
 
 router.get("/google", (req, res, next) => {
-  console.log("GOOGLE ROUTE HIT")
-
   const isRegistered = registerGoogleStrategy()
 
   if (!isRegistered) {
     return res.status(500).json({
       success: false,
-      message: "Google OAuth credentials missing in .env"
+      message: "Google OAuth credentials missing"
     })
   }
 
   return passport.authenticate("google", {
     scope: ["profile", "email"],
-    session: false
+    session: false,
+    prompt: "select_account"
   })(req, res, next)
 })
 
