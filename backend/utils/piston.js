@@ -4,30 +4,12 @@ const PISTON_URL =
   process.env.PISTON_URL || "http://localhost:2000/api/v2/execute"
 
 export const LANGUAGE_CONFIG = {
-  javascript: {
-    language: "javascript",
-    version: "20.11.1"
-  },
-  python: {
-    language: "python",
-    version: "3.12.0"
-  },
-  java: {
-    language: "java",
-    version: "15.0.2"
-  },
-  c: {
-    language: "c",
-    version: "10.2.0"
-  },
-  cpp: {
-    language: "c++",
-    version: "10.2.0"
-  },
-  go: {
-    language: "go",
-    version: "1.16.2"
-  }
+  javascript: { language: "javascript", version: "20.11.1" },
+  python: { language: "python", version: "3.10.0" },
+  java: { language: "java", version: "15.0.2" },
+  c: { language: "c", version: "10.2.0" },
+  cpp: { language: "c++", version: "10.2.0" },
+  go: { language: "go", version: "1.16.2" }
 }
 
 export async function runPiston({ code, language, stdin = "" }) {
@@ -63,21 +45,32 @@ export async function runPiston({ code, language, stdin = "" }) {
     const run = data.run || {}
     const compile = data.compile || {}
 
+    const output =
+      run.stdout ||
+      run.output ||
+      compile.stdout ||
+      compile.output ||
+      ""
+
+    const error =
+      run.stderr ||
+      compile.stderr ||
+      data.message ||
+      ""
+
+    const isAccepted = !error && (run.code === 0 || run.code === null || run.code === undefined)
+
     return {
-      stdout: run.stdout || "",
-      stderr: run.stderr || "",
+      stdout: output,
+      stderr: error,
       compile_output: compile.stderr || compile.output || "",
-      message:
-        run.output ||
-        compile.output ||
-        run.stderr ||
-        compile.stderr ||
-        "",
+      message: output || error,
       status: {
-        id: run.code === 0 ? 3 : 6,
-        description:
-          run.code === 0 ? "Accepted" : "Runtime/Compile Error"
+        id: isAccepted ? 3 : 6,
+        description: isAccepted ? "Accepted" : "Runtime/Compile Error"
       },
+      time: null,
+      memory: null,
       raw: data
     }
   } catch (error) {
