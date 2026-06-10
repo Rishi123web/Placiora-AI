@@ -3,8 +3,7 @@ import mongoose from "mongoose"
 
 import CodingSession from "../models/CodingSession.js"
 import { evaluateCodingAnswerAI } from "../utils/aiEvaluator.js"
-import { runJudge0 } from "../utils/judge0.js"
-
+import { runPiston } from "../utils/piston.js"
 const router = express.Router()
 
 const LANGUAGE_STARTERS = {
@@ -580,11 +579,11 @@ router.post("/run", async (req, res) => {
       })
     }
 
-    const result = await runJudge0({
-      code,
-      language,
-      stdin: stdin || input || ""
-    })
+    const result = await runPiston({
+  code,
+  language,
+  stdin: stdin || input || ""
+})
 
     res.json({
       success: true,
