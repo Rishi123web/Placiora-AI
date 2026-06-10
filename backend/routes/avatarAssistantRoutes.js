@@ -1,12 +1,12 @@
 import express from "express"
 import multer from "multer"
-import fs from "fs"
+import { Readable } from "stream"
 import Groq from "groq-sdk"
 
 const router = express.Router()
 
 const upload = multer({
-  dest: "uploads/audio/",
+  storage: multer.memoryStorage(),
   limits: {
     fileSize: 25 * 1024 * 1024
   }
@@ -35,6 +35,13 @@ router.post("/chat", async (req, res) => {
       })
     }
 
+    if (!process.env.GROQ_API_KEY) {
+      return res.status(500).json({
+        success: false,
+        reply: "Groq API key is missing on backend."
+      })
+    }
+
     const history = conversation.slice(-8).map((msg) => ({
       role: msg.role === "assistant" ? "assistant" : "user",
       content: msg.content || ""
@@ -52,15 +59,7 @@ You are Sifra, the intelligent AI assistant of Placiora AI.
 Platform: Placiora AI
 Tagline: Your Personal Placement Copilot
 
-You help with:
-- coding
-- debugging
-- interviews
-- resumes
-- aptitude
-- placements
-- project building
-- website navigation
+You help with coding, debugging, interviews, resumes, aptitude, placements, project building and website navigation.
 
 Rules:
 - Do not repeatedly introduce yourself.
@@ -94,27 +93,41 @@ Rules:
 
     res.status(500).json({
       success: false,
-      reply: "I am having trouble connecting right now. Please try again."
+      reply: "I am having trouble connecting right now. Please try again.",
+      error: error.message
     })
   }
 })
 
 router.post("/transcribe", upload.single("audio"), async (req, res) => {
-  let filePath = null
-
   try {
+    if (!process.env.GROQ_API_KEY) {
+      return res.status(500).json({
+        success: false,
+        text: "",
+        message: "Groq API key missing"
+      })
+    }
+
     if (!req.file) {
       return res.status(400).json({
         success: false,
         text: "",
-        message: "No audio file uploaded"
+        message: "No audio uploaded"
       })
     }
 
-    filePath = req.file.path
+    console.log("Sifra audio received:", {
+      originalname: req.file.originalname,
+      mimetype: req.file.mimetype,
+      size: req.file.size
+    })
+
+    const audioStream = Readable.from(req.file.buffer)
+    audioStream.path = req.file.originalname || "voice.webm"
 
     const transcription = await groq.audio.transcriptions.create({
-      file: fs.createReadStream(filePath),
+      file: audioStream,
       model: "whisper-large-v3",
       response_format: "json",
       language: "en"
@@ -130,13 +143,9 @@ router.post("/transcribe", upload.single("audio"), async (req, res) => {
     res.status(500).json({
       success: false,
       text: "",
-      message: "Audio transcription failed",
+      message: "Voice transcription failed",
       error: error.message
     })
-  } finally {
-    if (filePath && fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath)
-    }
   }
 })
 
