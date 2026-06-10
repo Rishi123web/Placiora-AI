@@ -1,7 +1,7 @@
 import express from "express"
 import multer from "multer"
-import { Readable } from "stream"
 import Groq from "groq-sdk"
+import { toFile } from "groq-sdk/uploads"
 
 const router = express.Router()
 
@@ -123,11 +123,16 @@ router.post("/transcribe", upload.single("audio"), async (req, res) => {
       size: req.file.size
     })
 
-    const audioStream = Readable.from(req.file.buffer)
-    audioStream.path = req.file.originalname || "voice.webm"
+    const audioFile = await toFile(
+      req.file.buffer,
+      req.file.originalname || "voice.webm",
+      {
+        type: req.file.mimetype || "audio/webm"
+      }
+    )
 
     const transcription = await groq.audio.transcriptions.create({
-      file: audioStream,
+      file: audioFile,
       model: "whisper-large-v3",
       response_format: "json",
       language: "en"
