@@ -23,7 +23,10 @@ import {
 
 import Avatar3D from "./Avatar3D.jsx"
 
-const API_URL = "http://localhost:5000/api/avatar-assistant"
+const API_URL =
+  (import.meta.env.VITE_API_URL || "http://localhost:5000") +
+  "/api/avatar-assistant"
+
 const MEMORY_KEY = "placiora_ai_avatar_memory"
 const COPILOT_CONTEXT_KEY = "placiora_ai_copilot_context"
 
@@ -58,10 +61,11 @@ function AIAssistantAvatar() {
     }
   ])
 
-  const recognitionRef = useRef(null)
+  const mediaRecorderRef = useRef(null)
+  const audioChunksRef = useRef([])
+  const audioStreamRef = useRef(null)
+
   const messagesEndRef = useRef(null)
-  const transcriptRef = useRef("")
-  const finalTranscriptRef = useRef("")
 
   const pageMode = useMemo(
     () => getPageMode(location.pathname),
@@ -150,16 +154,12 @@ function AIAssistantAvatar() {
       )
     }
 
-    if (selectedVoice === "robotic") {
-      return (
-        voices.find((v) => v.name.toLowerCase().includes("david")) ||
-        voices.find((v) => v.name.toLowerCase().includes("mark")) ||
-        voices.find((v) => v.name.toLowerCase().includes("microsoft")) ||
-        voices.find((v) => v.lang?.toLowerCase().startsWith("en"))
-      )
-    }
-
-    return voices[0]
+    return (
+      voices.find((v) => v.name.toLowerCase().includes("david")) ||
+      voices.find((v) => v.name.toLowerCase().includes("mark")) ||
+      voices.find((v) => v.lang?.toLowerCase().startsWith("en")) ||
+      voices[0]
+    )
   }
 
   function speak(text) {
@@ -177,7 +177,6 @@ function AIAssistantAvatar() {
     if (!cleanText) return
 
     const selectedVoice = localStorage.getItem("aiVoice") || "female"
-
     const utterance = new SpeechSynthesisUtterance(cleanText)
 
     if (selectedVoice === "female") {
@@ -186,16 +185,12 @@ function AIAssistantAvatar() {
     } else if (selectedVoice === "calm") {
       utterance.rate = 0.82
       utterance.pitch = 0.95
-    } else if (selectedVoice === "robotic") {
-      utterance.rate = 0.75
-      utterance.pitch = 0.7
     } else {
-      utterance.rate = 0.92
-      utterance.pitch = 1.08
+      utterance.rate = 0.78
+      utterance.pitch = 0.75
     }
 
     utterance.volume = 1
-
     utterance.onstart = () => setSpeaking(true)
     utterance.onend = () => setSpeaking(false)
     utterance.onerror = () => setSpeaking(false)
@@ -203,9 +198,7 @@ function AIAssistantAvatar() {
     const voices = window.speechSynthesis.getVoices()
     const voice = getPreferredVoice(voices, selectedVoice)
 
-    if (voice || voices[0]) {
-      utterance.voice = voice || voices[0]
-    }
+    if (voice) utterance.voice = voice
 
     window.speechSynthesis.speak(utterance)
   }
@@ -239,16 +232,13 @@ function AIAssistantAvatar() {
       ["coding", "/coding-round", "Opening Coding Round."],
       ["aptitude", "/aptitude", "Opening Aptitude Round."],
       ["oa", "/oa-assessment", "Opening OA Simulator."],
-      [
-        "placement readiness",
-        "/placement-readiness",
-        "Opening Placement Readiness."
-      ],
+      ["placement readiness", "/placement-readiness", "Opening Placement Readiness."],
       ["roadmap", "/skill-roadmap", "Opening Skill Roadmap."],
       ["predictor", "/placement-predictor", "Opening Placement Predictor."],
       ["mock placement", "/mock-placement", "Opening Mock Placement."],
       ["recruiter", "/recruiter-dashboard", "Opening Recruiter Dashboard."],
       ["history", "/history", "Opening History."],
+      ["certificate", "/certificate", "Opening Certificate."],
       ["dashboard", "/dashboard", "Opening Dashboard."],
       ["interview", "/interview", "Opening AI Interview."]
     ]
@@ -278,8 +268,6 @@ function AIAssistantAvatar() {
     ])
 
     setInput("")
-    transcriptRef.current = ""
-    finalTranscriptRef.current = ""
 
     const lowerMessage = userMessage.toLowerCase()
 
@@ -329,62 +317,147 @@ function AIAssistantAvatar() {
 
       const data = await res.json()
 
+      if (!res.ok) {
+        throw new Error(data?.reply || "Sifra request failed")
+      }
+
       addAssistantReply(
         data.reply || "I couldn't process that request right now."
       )
-    } catch {
+    } catch (error) {
+      console.error("Sifra Chat Frontend Error:", error)
       addAssistantReply("I am currently offline. Please try again.")
     } finally {
       setLoading(false)
     }
   }
 
-  function toggleVoice() {
-    stopSpeaking()
+  async function transcribeAudio(blob) {
+    const formData = new FormData()
+    formData.append("audio", blob, "sifra-audio.webm")
 
-    if (!recognitionRef.current) {
-      addAssistantReply(
-        "Voice input is not supported in this browser. You can type instead."
-      )
-      return
+    const res = await fetch(`${API_URL}/transcribe`, {
+      method: "POST",
+      body: formData
+    })
+
+    const data = await res.json()
+
+    if (!res.ok) {
+      throw new Error(data?.message || "Transcription failed")
     }
+
+    return data.text || ""
+  }
+
+  async function startGroqRecording() {
+    try {
+      stopSpeaking()
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        }
+      })
+
+      audioStreamRef.current = stream
+      audioChunksRef.current = []
+
+      const mimeType = MediaRecorder.isTypeSupported("audio/webm")
+        ? "audio/webm"
+        : "audio/mp4"
+
+      const recorder = new MediaRecorder(stream, { mimeType })
+
+      mediaRecorderRef.current = recorder
+
+      recorder.ondataavailable = (event) => {
+        if (event.data && event.data.size > 0) {
+          audioChunksRef.current.push(event.data)
+        }
+      }
+
+      recorder.onstop = async () => {
+        try {
+          setLoading(true)
+
+          const audioBlob = new Blob(audioChunksRef.current, {
+            type: mimeType
+          })
+
+          audioChunksRef.current = []
+
+          if (audioBlob.size < 1000) {
+            addAssistantReply("I couldn't hear anything clearly. Please try again.")
+            return
+          }
+
+          const text = await transcribeAudio(audioBlob)
+
+          if (!text.trim()) {
+            addAssistantReply("I couldn't understand the audio. Please try again.")
+            return
+          }
+
+          setInput(text)
+          await sendMessage(text)
+        } catch (error) {
+          console.error("Sifra Whisper Frontend Error:", error)
+          addAssistantReply("Voice transcription failed. Please try again.")
+        } finally {
+          setLoading(false)
+
+          if (audioStreamRef.current) {
+            audioStreamRef.current.getTracks().forEach((track) => track.stop())
+            audioStreamRef.current = null
+          }
+        }
+      }
+
+      recorder.start()
+      setListening(true)
+    } catch (error) {
+      console.error("Mic Permission Error:", error)
+      setListening(false)
+      addAssistantReply(
+        "Microphone permission is blocked. Please allow mic access and try again."
+      )
+    }
+  }
+
+  function stopGroqRecording() {
+    try {
+      if (
+        mediaRecorderRef.current &&
+        mediaRecorderRef.current.state !== "inactive"
+      ) {
+        mediaRecorderRef.current.stop()
+      }
+    } catch {
+      // ignore
+    }
+
+    setListening(false)
+  }
+
+  function toggleVoice() {
+    if (loading) return
 
     if (listening) {
-      try {
-        recognitionRef.current.stop()
-      } catch {
-        // ignore stop error
-      }
-
-      setListening(false)
-
-      const finalText = transcriptRef.current || input
-
-      if (finalText.trim()) {
-        setTimeout(() => {
-          sendMessage(finalText.trim())
-        }, 150)
-      }
-
+      stopGroqRecording()
       return
     }
 
-    try {
-      setInput("")
-      transcriptRef.current = ""
-      finalTranscriptRef.current = ""
-      setListening(true)
-      recognitionRef.current.start()
-    } catch {
-      setListening(false)
-    }
+    startGroqRecording()
   }
 
   function closeAssistant() {
     try {
-      recognitionRef.current?.stop()
+      stopGroqRecording()
     } catch {
-      // ignore stop error
+      // ignore
     }
 
     stopSpeaking()
@@ -404,62 +477,6 @@ function AIAssistantAvatar() {
       // ignore clipboard error
     }
   }
-
-  useEffect(() => {
-    const SpeechRecognition =
-      window.SpeechRecognition || window.webkitSpeechRecognition
-
-    if (!SpeechRecognition) return
-
-    const recognition = new SpeechRecognition()
-
-    recognition.continuous = true
-    recognition.interimResults = true
-    recognition.lang = "en-US"
-
-    recognition.onresult = (event) => {
-      let interimTranscript = ""
-
-      for (let i = event.resultIndex; i < event.results.length; i += 1) {
-        const transcript = event.results[i][0].transcript
-
-        if (event.results[i].isFinal) {
-          finalTranscriptRef.current += `${transcript} `
-        } else {
-          interimTranscript += `${transcript} `
-        }
-      }
-
-      const fullTranscript = (
-        finalTranscriptRef.current + interimTranscript
-      ).trim()
-
-      transcriptRef.current = fullTranscript
-      setInput(fullTranscript)
-    }
-
-    recognition.onerror = () => {
-      setListening(false)
-    }
-
-    recognition.onend = () => {
-      setListening(false)
-    }
-
-    recognitionRef.current = recognition
-
-    return () => {
-      try {
-        recognition.stop()
-      } catch {
-        // ignore stop error
-      }
-
-      if (window.speechSynthesis) {
-        window.speechSynthesis.cancel()
-      }
-    }
-  }, [])
 
   useEffect(() => {
     if (!window.speechSynthesis) return
@@ -496,6 +513,20 @@ function AIAssistantAvatar() {
 
     return () => clearTimeout(timer)
   }, [agentMode, open, location.pathname])
+
+  useEffect(() => {
+    return () => {
+      try {
+        stopGroqRecording()
+      } catch {
+        // ignore
+      }
+
+      if (window.speechSynthesis) {
+        window.speechSynthesis.cancel()
+      }
+    }
+  }, [])
 
   const quickActions = [
     "open dashboard",
@@ -563,7 +594,7 @@ function AIAssistantAvatar() {
 
                 <p className="text-xs text-cyan-300">
                   {listening
-                    ? "Listening... press mic again to stop"
+                    ? "Recording with Groq Whisper... press mic again to stop"
                     : speaking
                     ? "Speaking..."
                     : loading
@@ -731,10 +762,7 @@ function AIAssistantAvatar() {
 
                   <input
                     value={input}
-                    onChange={(e) => {
-                      setInput(e.target.value)
-                      transcriptRef.current = e.target.value
-                    }}
+                    onChange={(e) => setInput(e.target.value)}
                     onKeyDown={(e) => {
                       if (e.key === "Enter") sendMessage()
                     }}
@@ -758,8 +786,8 @@ function AIAssistantAvatar() {
 
                 <p className="text-[11px] text-slate-500 mt-3 flex items-center gap-1">
                   <Volume2 size={12} />
-                  Press mic once to start. Speak freely. Press again to stop and
-                  send.
+                  Press mic once to record with Groq Whisper. Press again to
+                  stop and send.
                 </p>
               </div>
             </>
