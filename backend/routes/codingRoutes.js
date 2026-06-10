@@ -4,16 +4,27 @@ import mongoose from "mongoose"
 import CodingSession from "../models/CodingSession.js"
 import { evaluateCodingAnswerAI } from "../utils/aiEvaluator.js"
 import { runPiston } from "../utils/piston.js"
+
 const router = express.Router()
 
 const LANGUAGE_STARTERS = {
-  javascript: `console.log("Hello World")`,
+  javascript: `const fs = require("fs")
+const input = fs.readFileSync(0, "utf8").trim()
 
-  python: `print("Hello World")`,
+console.log(input || "Hello World")`,
 
-  java: `class Main {
+  python: `import sys
+
+text = sys.stdin.read().strip()
+print(text or "Hello World")`,
+
+  java: `import java.util.*;
+
+class Main {
   public static void main(String[] args) {
-    System.out.println("Hello World");
+    Scanner sc = new Scanner(System.in);
+    String input = sc.hasNextLine() ? sc.nextLine() : "Hello World";
+    System.out.println(input);
   }
 }`,
 
@@ -51,24 +62,35 @@ const problems = {
         "Write a function/program that returns the reversed version of a string.",
       expectedOutput: "olleh",
       languageStarters: {
-        javascript: `function reverseString(str) {
+        javascript: `const fs = require("fs")
+const input = fs.readFileSync(0, "utf8").trim()
+
+function reverseString(str) {
   return str.split("").reverse().join("")
 }
 
-console.log(reverseString("hello"))`,
+console.log(reverseString(input))`,
 
-        python: `def reverse_string(s):
+        python: `import sys
+
+s = sys.stdin.read().strip()
+
+def reverse_string(s):
     return s[::-1]
 
-print(reverse_string("hello"))`,
+print(reverse_string(s))`,
 
-        java: `class Main {
+        java: `import java.util.*;
+
+class Main {
   static String reverseString(String str) {
     return new StringBuilder(str).reverse().toString();
   }
 
   public static void main(String[] args) {
-    System.out.println(reverseString("hello"));
+    Scanner sc = new Scanner(System.in);
+    String input = sc.hasNextLine() ? sc.nextLine().trim() : "";
+    System.out.println(reverseString(input));
   }
 }`,
 
@@ -86,9 +108,16 @@ void reverseString(char str[]) {
 }
 
 int main() {
-  char str[] = "hello";
+  char str[1000];
+
+  if (fgets(str, sizeof(str), stdin) == NULL) {
+    return 0;
+  }
+
+  str[strcspn(str, "\\n")] = '\\0';
   reverseString(str);
   printf("%s", str);
+
   return 0;
 }`,
 
@@ -102,13 +131,20 @@ string reverseString(string str) {
 }
 
 int main() {
-  cout << reverseString("hello");
+  string input;
+  getline(cin, input);
+  cout << reverseString(input);
   return 0;
 }`,
 
         go: `package main
 
-import "fmt"
+import (
+  "bufio"
+  "fmt"
+  "os"
+  "strings"
+)
 
 func reverseString(s string) string {
   r := []rune(s)
@@ -121,7 +157,11 @@ func reverseString(s string) string {
 }
 
 func main() {
-  fmt.Println(reverseString("hello"))
+  reader := bufio.NewReader(os.Stdin)
+  input, _ := reader.ReadString('\\n')
+  input = strings.TrimSpace(input)
+
+  fmt.Println(reverseString(input))
 }`
       },
       testCases: [
@@ -138,18 +178,30 @@ func main() {
         "Write a function/program that returns the largest number from an array.",
       expectedOutput: "9",
       languageStarters: {
-        javascript: `function findMax(arr) {
+        javascript: `const fs = require("fs")
+const input = fs.readFileSync(0, "utf8").trim()
+
+const arr = JSON.parse(input)
+
+function findMax(arr) {
   return Math.max(...arr)
 }
 
-console.log(findMax([4, 8, 1, 9, 2]))`,
+console.log(findMax(arr))`,
 
-        python: `def find_max(arr):
+        python: `import sys
+import json
+
+arr = json.loads(sys.stdin.read().strip())
+
+def find_max(arr):
     return max(arr)
 
-print(find_max([4, 8, 1, 9, 2]))`,
+print(find_max(arr))`,
 
-        java: `class Main {
+        java: `import java.util.*;
+
+class Main {
   static int findMax(int[] arr) {
     int max = arr[0];
 
@@ -161,48 +213,129 @@ print(find_max([4, 8, 1, 9, 2]))`,
   }
 
   public static void main(String[] args) {
-    System.out.println(findMax(new int[]{4, 8, 1, 9, 2}));
+    Scanner sc = new Scanner(System.in);
+    String input = sc.hasNextLine() ? sc.nextLine().trim() : "";
+
+    input = input.replace("[", "").replace("]", "").trim();
+
+    if (input.isEmpty()) {
+      System.out.println(0);
+      return;
+    }
+
+    String[] parts = input.split(",");
+    int[] arr = new int[parts.length];
+
+    for (int i = 0; i < parts.length; i++) {
+      arr[i] = Integer.parseInt(parts[i].trim());
+    }
+
+    System.out.println(findMax(arr));
   }
 }`,
 
         c: `#include <stdio.h>
-
-int findMax(int arr[], int n) {
-  int max = arr[0];
-
-  for (int i = 1; i < n; i++) {
-    if (arr[i] > max) max = arr[i];
-  }
-
-  return max;
-}
+#include <string.h>
+#include <stdlib.h>
 
 int main() {
-  int arr[] = {4, 8, 1, 9, 2};
-  printf("%d", findMax(arr, 5));
+  char input[2000];
+
+  if (fgets(input, sizeof(input), stdin) == NULL) {
+    return 0;
+  }
+
+  int max = -2147483648;
+  int found = 0;
+
+  char *p = input;
+
+  while (*p) {
+    if ((*p >= '0' && *p <= '9') || *p == '-') {
+      int num = strtol(p, &p, 10);
+
+      if (!found || num > max) {
+        max = num;
+        found = 1;
+      }
+    } else {
+      p++;
+    }
+  }
+
+  if (found) printf("%d", max);
+
   return 0;
 }`,
 
         cpp: `#include <iostream>
-#include <vector>
-#include <algorithm>
+#include <string>
+#include <climits>
 using namespace std;
 
 int main() {
-  vector<int> arr = {4, 8, 1, 9, 2};
-  cout << *max_element(arr.begin(), arr.end());
+  string input;
+  getline(cin, input);
+
+  int maxValue = INT_MIN;
+  bool found = false;
+
+  for (int i = 0; i < input.size(); i++) {
+    if (isdigit(input[i]) || input[i] == '-') {
+      int sign = 1;
+
+      if (input[i] == '-') {
+        sign = -1;
+        i++;
+      }
+
+      int num = 0;
+
+      while (i < input.size() && isdigit(input[i])) {
+        num = num * 10 + (input[i] - '0');
+        i++;
+      }
+
+      num *= sign;
+
+      if (!found || num > maxValue) {
+        maxValue = num;
+        found = true;
+      }
+    }
+  }
+
+  if (found) cout << maxValue;
+
   return 0;
 }`,
 
         go: `package main
 
-import "fmt"
+import (
+  "bufio"
+  "fmt"
+  "os"
+  "regexp"
+  "strconv"
+)
 
 func main() {
-  arr := []int{4, 8, 1, 9, 2}
-  max := arr[0]
+  reader := bufio.NewReader(os.Stdin)
+  input, _ := reader.ReadString('\\n')
 
-  for _, num := range arr {
+  re := regexp.MustCompile("-?\\\\d+")
+  matches := re.FindAllString(input, -1)
+
+  if len(matches) == 0 {
+    return
+  }
+
+  max, _ := strconv.Atoi(matches[0])
+
+  for _, item := range matches {
+    num, _ := strconv.Atoi(item)
+
     if num > max {
       max = num
     }
@@ -227,24 +360,35 @@ func main() {
         "Write a function/program that checks whether a string is a palindrome.",
       expectedOutput: "true",
       languageStarters: {
-        javascript: `function isPalindrome(str) {
+        javascript: `const fs = require("fs")
+const input = fs.readFileSync(0, "utf8").trim()
+
+function isPalindrome(str) {
   return str === str.split("").reverse().join("")
 }
 
-console.log(isPalindrome("madam"))`,
+console.log(isPalindrome(input))`,
 
-        python: `def is_palindrome(s):
+        python: `import sys
+
+s = sys.stdin.read().strip()
+
+def is_palindrome(s):
     return s == s[::-1]
 
-print(str(is_palindrome("madam")).lower())`,
+print(str(is_palindrome(s)).lower())`,
 
-        java: `class Main {
+        java: `import java.util.*;
+
+class Main {
   static boolean isPalindrome(String str) {
     return str.equals(new StringBuilder(str).reverse().toString());
   }
 
   public static void main(String[] args) {
-    System.out.println(isPalindrome("madam"));
+    Scanner sc = new Scanner(System.in);
+    String input = sc.hasNextLine() ? sc.nextLine().trim() : "";
+    System.out.println(isPalindrome(input));
   }
 }`,
 
@@ -265,7 +409,15 @@ int isPalindrome(char str[]) {
 }
 
 int main() {
-  printf("%s", isPalindrome("madam") ? "true" : "false");
+  char str[1000];
+
+  if (fgets(str, sizeof(str), stdin) == NULL) {
+    return 0;
+  }
+
+  str[strcspn(str, "\\n")] = '\\0';
+  printf("%s", isPalindrome(str) ? "true" : "false");
+
   return 0;
 }`,
 
@@ -280,13 +432,20 @@ bool isPalindrome(string str) {
 }
 
 int main() {
-  cout << (isPalindrome("madam") ? "true" : "false");
+  string input;
+  getline(cin, input);
+  cout << (isPalindrome(input) ? "true" : "false");
   return 0;
 }`,
 
         go: `package main
 
-import "fmt"
+import (
+  "bufio"
+  "fmt"
+  "os"
+  "strings"
+)
 
 func isPalindrome(s string) bool {
   r := []rune(s)
@@ -301,7 +460,11 @@ func isPalindrome(s string) bool {
 }
 
 func main() {
-  fmt.Println(isPalindrome("madam"))
+  reader := bufio.NewReader(os.Stdin)
+  input, _ := reader.ReadString('\\n')
+  input = strings.TrimSpace(input)
+
+  fmt.Println(isPalindrome(input))
 }`
       },
       testCases: [
@@ -319,7 +482,14 @@ func main() {
       description: "Return indices of two numbers whose sum equals the target.",
       expectedOutput: "[0,1]",
       languageStarters: {
-        javascript: `function twoSum(nums, target) {
+        javascript: `const fs = require("fs")
+const input = fs.readFileSync(0, "utf8").trim()
+
+const [arrText, targetText] = input.split("|")
+const nums = JSON.parse(arrText)
+const target = Number(targetText)
+
+function twoSum(nums, target) {
   const map = new Map()
 
   for (let i = 0; i < nums.length; i++) {
@@ -335,9 +505,18 @@ func main() {
   return []
 }
 
-console.log(JSON.stringify(twoSum([2, 7, 11, 15], 9)))`,
+console.log(JSON.stringify(twoSum(nums, target)))`,
 
-        python: `def two_sum(nums, target):
+        python: `import sys
+import json
+
+raw = sys.stdin.read().strip()
+arr_text, target_text = raw.split("|")
+
+nums = json.loads(arr_text)
+target = int(target_text)
+
+def two_sum(nums, target):
     seen = {}
 
     for i, num in enumerate(nums):
@@ -350,7 +529,7 @@ console.log(JSON.stringify(twoSum([2, 7, 11, 15], 9)))`,
 
     return []
 
-print(two_sum([2, 7, 11, 15], 9))`,
+print(str(two_sum(nums, target)).replace(" ", ""))`,
 
         java: `import java.util.*;
 
@@ -372,16 +551,61 @@ class Main {
   }
 
   public static void main(String[] args) {
-    System.out.println(Arrays.toString(twoSum(new int[]{2, 7, 11, 15}, 9)).replace(" ", ""));
+    Scanner sc = new Scanner(System.in);
+    String raw = sc.hasNextLine() ? sc.nextLine().trim() : "";
+    String[] chunks = raw.split("\\\\|");
+
+    String arrText = chunks[0].replace("[", "").replace("]", "");
+    int target = Integer.parseInt(chunks[1].trim());
+
+    String[] parts = arrText.split(",");
+    int[] nums = new int[parts.length];
+
+    for (int i = 0; i < parts.length; i++) {
+      nums[i] = Integer.parseInt(parts[i].trim());
+    }
+
+    System.out.println(Arrays.toString(twoSum(nums, target)).replace(" ", ""));
   }
 }`,
 
         c: `#include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
 
 int main() {
-  int nums[] = {2, 7, 11, 15};
-  int target = 9;
-  int n = 4;
+  char input[2000];
+
+  if (fgets(input, sizeof(input), stdin) == NULL) {
+    return 0;
+  }
+
+  int nums[1000];
+  int n = 0;
+  int target = 0;
+  int afterPipe = 0;
+
+  char *p = input;
+
+  while (*p) {
+    if (*p == '|') {
+      afterPipe = 1;
+      p++;
+      continue;
+    }
+
+    if ((*p >= '0' && *p <= '9') || *p == '-') {
+      int num = strtol(p, &p, 10);
+
+      if (afterPipe) {
+        target = num;
+      } else {
+        nums[n++] = num;
+      }
+    } else {
+      p++;
+    }
+  }
 
   for (int i = 0; i < n; i++) {
     for (int j = i + 1; j < n; j++) {
@@ -399,7 +623,34 @@ int main() {
         cpp: `#include <iostream>
 #include <vector>
 #include <unordered_map>
+#include <string>
 using namespace std;
+
+vector<int> parseNums(string text) {
+  vector<int> nums;
+
+  for (int i = 0; i < text.size(); i++) {
+    if (isdigit(text[i]) || text[i] == '-') {
+      int sign = 1;
+
+      if (text[i] == '-') {
+        sign = -1;
+        i++;
+      }
+
+      int num = 0;
+
+      while (i < text.size() && isdigit(text[i])) {
+        num = num * 10 + (text[i] - '0');
+        i++;
+      }
+
+      nums.push_back(num * sign);
+    }
+  }
+
+  return nums;
+}
 
 vector<int> twoSum(vector<int> nums, int target) {
   unordered_map<int, int> mp;
@@ -418,14 +669,37 @@ vector<int> twoSum(vector<int> nums, int target) {
 }
 
 int main() {
-  vector<int> ans = twoSum({2, 7, 11, 15}, 9);
-  cout << "[" << ans[0] << "," << ans[1] << "]";
+  string raw;
+  getline(cin, raw);
+
+  int pipe = raw.find("|");
+  string arrText = raw.substr(0, pipe);
+  string targetText = raw.substr(pipe + 1);
+
+  vector<int> nums = parseNums(arrText);
+  int target = stoi(targetText);
+
+  vector<int> ans = twoSum(nums, target);
+
+  if (ans.size() == 2) {
+    cout << "[" << ans[0] << "," << ans[1] << "]";
+  } else {
+    cout << "[]";
+  }
+
   return 0;
 }`,
 
         go: `package main
 
-import "fmt"
+import (
+  "bufio"
+  "fmt"
+  "os"
+  "regexp"
+  "strconv"
+  "strings"
+)
 
 func twoSum(nums []int, target int) []int {
   seen := map[int]int{}
@@ -443,14 +717,40 @@ func twoSum(nums []int, target int) []int {
   return []int{}
 }
 
+func parseNums(text string) []int {
+  re := regexp.MustCompile("-?\\\\d+")
+  matches := re.FindAllString(text, -1)
+  nums := []int{}
+
+  for _, item := range matches {
+    num, _ := strconv.Atoi(item)
+    nums = append(nums, num)
+  }
+
+  return nums
+}
+
 func main() {
-  ans := twoSum([]int{2, 7, 11, 15}, 9)
-  fmt.Printf("[%d,%d]", ans[0], ans[1])
+  reader := bufio.NewReader(os.Stdin)
+  raw, _ := reader.ReadString('\\n')
+  raw = strings.TrimSpace(raw)
+
+  parts := strings.Split(raw, "|")
+  nums := parseNums(parts[0])
+  target, _ := strconv.Atoi(strings.TrimSpace(parts[1]))
+
+  ans := twoSum(nums, target)
+
+  if len(ans) == 2 {
+    fmt.Printf("[%d,%d]", ans[0], ans[1])
+  } else {
+    fmt.Print("[]")
+  }
 }`
       },
       testCases: [
-        { input: "[2, 7, 11, 15], 9", expectedOutput: "[0,1]" },
-        { input: "[3, 2, 4], 6", expectedOutput: "[1,2]" }
+        { input: "[2, 7, 11, 15]|9", expectedOutput: "[0,1]" },
+        { input: "[3, 2, 4]|6", expectedOutput: "[1,2]" }
       ]
     }
   ]
@@ -504,12 +804,19 @@ const createHints = ({ language, errorText }) => {
     text.includes("connection refused") ||
     text.includes("econnrefused")
   ) {
-    hints.push("Judge0 server is not reachable. Make sure Docker Judge0 is running.")
-    hints.push("Check JUDGE0_URL in backend .env.")
+    hints.push(
+      "Piston server is not reachable. Make sure Docker Piston and ngrok are running."
+    )
+    hints.push("Check PISTON_URL in Render environment variables.")
   }
 
-  if (text.includes("expected") || text.includes("syntax")) {
-    hints.push("Check missing brackets, semicolons, quotes or commas.")
+  if (
+    text.includes("expected") ||
+    text.includes("syntax") ||
+    text.includes("parse") ||
+    text.includes("unexpected")
+  ) {
+    hints.push("Check brackets, semicolons, quotes, commas and input parsing.")
   }
 
   if (text.includes("undeclared") || text.includes("cannot find symbol")) {
@@ -527,21 +834,22 @@ const createHints = ({ language, errorText }) => {
 
   if (safeLanguage === "python") {
     hints.push("Check indentation carefully.")
-    hints.push("Python uses : after function/if/for/while blocks.")
+    hints.push("Read input using sys.stdin when solving test-case based problems.")
   }
 
   if (safeLanguage === "javascript") {
     hints.push("Use console.log(...) to print output.")
+    hints.push("Read input using fs.readFileSync(0, 'utf8').")
   }
 
   if (safeLanguage === "c" || safeLanguage === "cpp") {
     hints.push("Check #include statements and missing semicolons.")
-    hints.push("Make sure main returns int.")
+    hints.push("Read input from stdin instead of hardcoding sample values.")
   }
 
   if (safeLanguage === "go") {
     hints.push("Go code must start with package main.")
-    hints.push("Use fmt.Println(...) and import \"fmt\".")
+    hints.push('Use fmt.Println(...) and import "fmt".')
   }
 
   return [...new Set(hints)].slice(0, 5)
@@ -580,10 +888,10 @@ router.post("/run", async (req, res) => {
     }
 
     const result = await runPiston({
-  code,
-  language,
-  stdin: stdin || input || ""
-})
+      code,
+      language,
+      stdin: stdin || input || ""
+    })
 
     res.json({
       success: true,
@@ -591,11 +899,14 @@ router.post("/run", async (req, res) => {
       stderr: result.stderr || "",
       compile_output: result.compile_output || "",
       message: result.message || "",
-      hints: createHints({
-        language,
-        errorText:
-          result.stderr || result.compile_output || result.message || ""
-      }),
+      hints:
+        result.status?.id === 3
+          ? []
+          : createHints({
+              language,
+              errorText:
+                result.stderr || result.compile_output || result.message || ""
+            }),
       status: result.status || {
         id: 0,
         description: "Unknown"
@@ -621,7 +932,7 @@ router.post("/run", async (req, res) => {
       }),
       status: {
         id: 13,
-        description: "Judge0 Connection Error"
+        description: "Piston Connection Error"
       }
     })
   }
@@ -642,17 +953,41 @@ router.post("/submit", async (req, res) => {
     const safeLanguage = normalizeLanguage(language)
     const safeTestResults = Array.isArray(testResults) ? testResults : []
 
-    const result = await evaluateCodingAnswerAI({
-      problem: {
-        ...problem,
-        language: safeLanguage
-      },
-      code,
-      testResults: safeTestResults
-    })
-
     const passedTests = safeTestResults.filter((item) => item.passed).length
     const totalTests = safeTestResults.length
+    const fallbackScore =
+      totalTests > 0 ? Math.round((passedTests / totalTests) * 100) : 0
+
+    let result
+
+    try {
+      result = await evaluateCodingAnswerAI({
+        problem: {
+          ...problem,
+          language: safeLanguage
+        },
+        code,
+        testResults: safeTestResults
+      })
+    } catch (aiError) {
+      console.log("AI Evaluation Error:", aiError.message)
+
+      result = {
+        score: fallbackScore,
+        feedback:
+          fallbackScore === 100
+            ? "All visible test cases passed. Great job!"
+            : `${passedTests}/${totalTests} test cases passed. Check failed cases and avoid hardcoding.`,
+        strengths:
+          fallbackScore === 100
+            ? ["Correct output for visible test cases"]
+            : ["Code executed through Piston"],
+        weaknesses:
+          fallbackScore === 100 ? [] : ["Some visible test cases failed"],
+        improvedApproach:
+          "Read input from stdin and solve for every test case, not only the sample input."
+      }
+    }
 
     const codingSession = await CodingSession.create({
       userId:
@@ -663,11 +998,11 @@ router.post("/submit", async (req, res) => {
       description: problem.description || "",
       language: safeLanguage,
       code,
-      score: result.score,
-      feedback: result.feedback,
-      strengths: result.strengths,
-      weaknesses: result.weaknesses,
-      improvedApproach: result.improvedApproach,
+      score: result.score || fallbackScore,
+      feedback: result.feedback || "",
+      strengths: result.strengths || [],
+      weaknesses: result.weaknesses || [],
+      improvedApproach: result.improvedApproach || "",
       testResults: safeTestResults,
       passedTests,
       totalTests
@@ -679,10 +1014,19 @@ router.post("/submit", async (req, res) => {
       codingSession
     })
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: "AI code evaluation failed",
-      error: error.message
+    console.log("Submit Error:", error.message)
+
+    res.json({
+      success: true,
+      result: {
+        score: 0,
+        feedback: "Code submitted, but saving or AI feedback failed.",
+        strengths: [],
+        weaknesses: ["Submission fallback used"],
+        improvedApproach:
+          "Check backend logs and AI API key if AI feedback is required."
+      },
+      codingSession: null
     })
   }
 })
