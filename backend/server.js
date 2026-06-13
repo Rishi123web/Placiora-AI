@@ -8,34 +8,32 @@ import http from "http"
 import passport from "passport"
 import { Server } from "socket.io"
 
-import authRoutes from "./routes/authRoutes.js"
-import oauthRoutes from "./routes/oauthRoutes.js"
-import interviewRoutes from "./routes/interviewRoutes.js"
-import resumeRoutes from "./routes/resumeRoutes.js"
-import historyRoutes from "./routes/historyRoutes.js"
-import aiRoutes from "./routes/aiRoutes.js"
-import reportRoutes from "./routes/reportRoutes.js"
-import codingRoutes from "./routes/codingRoutes.js"
-import aptitudeRoutes from "./routes/aptitudeRoutes.js"
-import analyticsRoutes from "./routes/analyticsRoutes.js"
-import liveInterviewRoutes from "./routes/liveInterviewRoutes.js"
-import resumeBuilderRoutes from "./routes/resumeBuilderRoutes.js"
-
-import placementReadinessRoutes from "./routes/placementReadinessRoutes.js"
-import systemDesignRoutes from "./routes/systemDesignRoutes.js"
-import hrInterviewRoutes from "./routes/hrInterviewRoutes.js"
-import skillRoadmapRoutes from "./routes/skillRoadmapRoutes.js"
-import companyPredictionRoutes from "./routes/companyPredictionRoutes.js"
-import oaAssessmentRoutes from "./routes/oaAssessmentRoutes.js"
-import mockPlacementRoutes from "./routes/mockPlacementRoutes.js"
-import recruiterReportRoutes from "./routes/recruiterReportRoutes.js"
-import gdRoundRoutes from "./routes/gdRoundRoutes.js"
-import liveGDRoundRoutes from "./routes/liveGDRoundRoutes.js"
-import avatarAssistantRoutes from "./routes/avatarAssistantRoutes.js"
-import supportRoutes from "./routes/supportRoutes.js"
-import certificateRoutes from "./routes/certificateRoutes.js"
-
-import setupLiveGDSocket from "./sockets/liveGDSocket.js"
+const { default: authRoutes } = await import("./routes/authRoutes.js")
+const { default: oauthRoutes } = await import("./routes/oauthRoutes.js")
+const { default: interviewRoutes } = await import("./routes/interviewRoutes.js")
+const { default: resumeRoutes } = await import("./routes/resumeRoutes.js")
+const { default: historyRoutes } = await import("./routes/historyRoutes.js")
+const { default: aiRoutes } = await import("./routes/aiRoutes.js")
+const { default: reportRoutes } = await import("./routes/reportRoutes.js")
+const { default: codingRoutes } = await import("./routes/codingRoutes.js")
+const { default: aptitudeRoutes } = await import("./routes/aptitudeRoutes.js")
+const { default: analyticsRoutes } = await import("./routes/analyticsRoutes.js")
+const { default: liveInterviewRoutes } = await import("./routes/liveInterviewRoutes.js")
+const { default: resumeBuilderRoutes } = await import("./routes/resumeBuilderRoutes.js")
+const { default: placementReadinessRoutes } = await import("./routes/placementReadinessRoutes.js")
+const { default: systemDesignRoutes } = await import("./routes/systemDesignRoutes.js")
+const { default: hrInterviewRoutes } = await import("./routes/hrInterviewRoutes.js")
+const { default: skillRoadmapRoutes } = await import("./routes/skillRoadmapRoutes.js")
+const { default: companyPredictionRoutes } = await import("./routes/companyPredictionRoutes.js")
+const { default: oaAssessmentRoutes } = await import("./routes/oaAssessmentRoutes.js")
+const { default: mockPlacementRoutes } = await import("./routes/mockPlacementRoutes.js")
+const { default: recruiterReportRoutes } = await import("./routes/recruiterReportRoutes.js")
+const { default: gdRoundRoutes } = await import("./routes/gdRoundRoutes.js")
+const { default: liveGDRoundRoutes } = await import("./routes/liveGDRoundRoutes.js")
+const { default: avatarAssistantRoutes } = await import("./routes/avatarAssistantRoutes.js")
+const { default: supportRoutes } = await import("./routes/supportRoutes.js")
+const { default: certificateRoutes } = await import("./routes/certificateRoutes.js")
+const { default: setupLiveGDSocket } = await import("./sockets/liveGDSocket.js")
 
 const app = express()
 const server = http.createServer(app)

@@ -1,3 +1,6 @@
+import dotenv from "dotenv"
+dotenv.config()
+
 import express from "express"
 import multer from "multer"
 import Groq from "groq-sdk"
@@ -12,15 +15,23 @@ const upload = multer({
   }
 })
 
-const groq = new Groq({
-  apiKey: process.env.GROQ_API_KEY
-})
+const GROQ_API_KEY = process.env.GROQ_API_KEY?.trim()
+
+let groq = null
+
+if (GROQ_API_KEY) {
+  groq = new Groq({
+    apiKey: GROQ_API_KEY
+  })
+} else {
+  console.log("Sifra Error: GROQ_API_KEY missing")
+}
 
 router.get("/test", (req, res) => {
   res.json({
     success: true,
     message: "Sifra Assistant Online",
-    groqLoaded: Boolean(process.env.GROQ_API_KEY)
+    groqLoaded: Boolean(GROQ_API_KEY)
   })
 })
 
@@ -28,24 +39,26 @@ router.post("/chat", async (req, res) => {
   try {
     const { message, conversation = [], context = {} } = req.body
 
-    if (!message) {
+    if (!message?.trim()) {
       return res.status(400).json({
         success: false,
         reply: "No message received."
       })
     }
 
-    if (!process.env.GROQ_API_KEY) {
+    if (!groq) {
       return res.status(500).json({
         success: false,
         reply: "Groq API key is missing on backend."
       })
     }
 
-    const history = conversation.slice(-8).map((msg) => ({
-      role: msg.role === "assistant" ? "assistant" : "user",
-      content: msg.content || ""
-    }))
+    const history = Array.isArray(conversation)
+      ? conversation.slice(-8).map((msg) => ({
+          role: msg.role === "assistant" ? "assistant" : "user",
+          content: String(msg.content || "")
+        }))
+      : []
 
     const completion = await groq.chat.completions.create({
       model: "llama-3.3-70b-versatile",
@@ -101,7 +114,7 @@ Rules:
 
 router.post("/transcribe", upload.single("audio"), async (req, res) => {
   try {
-    if (!process.env.GROQ_API_KEY) {
+    if (!groq) {
       return res.status(500).json({
         success: false,
         text: "",
