@@ -45,86 +45,86 @@ const FAQS = [
   {
     icon: Code2,
     title: "Coding round error",
-    keywords: "coding round code run judge0 compiler execution output testcases error",
-    text: "Check your selected language, input format, brackets and function name. Use Sifra Coding Copilot to detect the bug and generate corrected copy-paste code."
+    keywords: "coding round code run compiler execution output testcases error",
+    text: "Check selected language, input format, brackets and function name. Make sure Piston/Judge0 runner is live."
   },
   {
     icon: FileText,
     title: "Resume upload issue",
     keywords: "resume analyzer upload pdf docx txt ats parse file",
-    text: "Upload PDF, DOCX or TXT only. Avoid scanned image resumes. Keep file size small and make sure your resume text is selectable."
+    text: "Upload PDF, DOCX or TXT only. Avoid scanned image resumes. Keep file size small."
   },
   {
     icon: User,
     title: "Google login not working",
-    keywords: "google login oauth route not connected authentication account",
-    text: "Check backend OAuth route, Google Client ID, Client Secret, callback URL and restart backend. Make sure /api/oauth/google opens correctly."
+    keywords: "google login oauth route authentication account",
+    text: "Check Google Client ID, Client Secret, callback URL and /api/oauth/google route."
   },
   {
     icon: Lock,
     title: "Email/password login failed",
     keywords: "login password signup invalid credentials account auth",
-    text: "Check email/password, make sure the user exists, MongoDB is connected and /api/auth/login route is working."
+    text: "Check email/password, MongoDB connection and /api/auth/login route."
   },
   {
     icon: Brain,
-    title: "AI Interview questions not generating",
+    title: "AI questions not generating",
     keywords: "ai interview questions groq api generation failed",
-    text: "Check GROQ_API_KEY in backend .env, restart backend and confirm the terminal shows GROQ API Loaded."
+    text: "Check GROQ_API_KEY in backend env and restart backend."
   },
   {
     icon: Video,
     title: "Live interview not starting",
     keywords: "live interview start camera mic session speech",
-    text: "Allow mic/camera, click Load Devices, select devices, then start. If still failing, check backend /api/live-interview route."
+    text: "Allow mic/camera, select devices and confirm backend live-interview route works."
   },
   {
     icon: Users,
     title: "GD Round issue",
-    keywords: "gd round group discussion live gd socket invite link participants",
-    text: "Check socket server, meeting link, participant limit and browser permissions. Restart backend if socket connection fails."
+    keywords: "gd group discussion socket invite link participants",
+    text: "Check socket server, meeting link, participant limit and browser permissions."
   },
   {
     icon: ClipboardCheck,
     title: "OA Simulator not working",
     keywords: "oa assessment simulator test submit questions",
-    text: "Check /api/oa-assessment route, make sure backend is running and selected difficulty/category is valid."
+    text: "Check /api/oa-assessment route and selected category/difficulty."
   },
   {
     icon: History,
     title: "History not showing",
-    keywords: "history dashboard fetch user id sessions report past interviews",
-    text: "Make sure user is logged in, token/user exists in localStorage and backend history route uses user._id or user.id correctly."
+    keywords: "history dashboard fetch user id sessions report",
+    text: "Make sure user is logged in and token/user exists in localStorage."
   },
   {
     icon: Settings,
     title: "Theme mode not applying",
-    keywords: "settings theme light dark mode ui white black",
-    text: "Theme is saved in localStorage. Reload once after changing theme and make sure index.css has the light-mode styles."
+    keywords: "settings theme light dark mode ui",
+    text: "Theme is saved in localStorage. Reload once after changing theme."
   },
   {
-    icon: Volume2Icon,
+    icon: Sparkles,
     title: "Sifra voice not changing",
-    keywords: "sifra voice female calm robotic assistant speech",
-    text: "Voice style is saved as aiVoice in localStorage. Refresh once and make sure AIAssistantAvatar reads localStorage.getItem('aiVoice')."
+    keywords: "sifra voice female robotic assistant speech",
+    text: "Voice style is saved in localStorage. Refresh once after changing it."
   },
   {
     icon: Mail,
     title: "Support email not sending",
     keywords: "support email nodemailer gmail app password failed send",
-    text: "Use Gmail App Password, not normal Gmail password. Check SUPPORT_EMAIL and SUPPORT_EMAIL_PASSWORD in backend .env, then restart backend."
+    text: "Use Gmail App Password, not normal Gmail password. Check SUPPORT_EMAIL and SUPPORT_EMAIL_PASSWORD."
   },
   {
     icon: Upload,
     title: "File upload failed",
     keywords: "upload multer file resume pdf docx storage",
-    text: "Check file type, file size, multer route, backend upload limit and whether uploads folder exists."
+    text: "Check file type, file size, multer route and backend upload limit."
   },
   {
     icon: Wifi,
     title: "Network error",
-    keywords: "network error axios backend localhost cors failed fetch",
-    text: "Make sure backend is live, CORS CLIENT_URL is correct and the frontend VITE_API_URL points to your Render backend."
+    keywords: "network error axios backend cors failed fetch",
+    text: "Make sure backend is live, CORS is correct and VITE_API_URL points to Render."
   },
   {
     icon: Bug,
@@ -133,10 +133,6 @@ const FAQS = [
     text: "Send page name, screenshot, exact error message and what you clicked before the issue happened."
   }
 ]
-
-function Volume2Icon(props) {
-  return <Sparkles {...props} />
-}
 
 function HelpSupport() {
   const [query, setQuery] = useState("")
@@ -172,6 +168,8 @@ function HelpSupport() {
   }
 
   const submitTicket = async () => {
+    if (sending) return
+
     if (!message.trim()) {
       setStatus({
         type: "error",
@@ -186,19 +184,24 @@ function HelpSupport() {
 
       const user = getUser()
 
-      const res = await axios.post(`${API_BASE}/api/support/send`, {
-        category,
-        message,
-        userName: user?.name || "Unknown User",
-        userEmail: user?.email || "No email found"
-      })
+      const res = await axios.post(
+        `${API_BASE}/api/support/send`,
+        {
+          category,
+          message: message.trim(),
+          userName: user?.name || "Unknown User",
+          userEmail: user?.email || "No email found"
+        },
+        {
+          timeout: 25000
+        }
+      )
 
       if (res.data?.success) {
         setStatus({
           type: "success",
           text: "Support request sent successfully to placiora.support@gmail.com."
         })
-
         setMessage("")
       } else {
         setStatus({
@@ -207,10 +210,14 @@ function HelpSupport() {
         })
       }
     } catch (error) {
+      console.log("Support frontend error:", error.response?.data || error.message)
+
       setStatus({
         type: "error",
         text:
+          error.response?.data?.error ||
           error.response?.data?.message ||
+          error.message ||
           "Failed to send support request. Check backend/email configuration."
       })
     } finally {
@@ -227,10 +234,9 @@ function HelpSupport() {
         >
           <div className="absolute -top-32 -right-32 w-[520px] h-[520px] bg-cyan-500/20 rounded-full blur-[140px]" />
           <div className="absolute -bottom-40 -left-40 w-[520px] h-[520px] bg-purple-600/20 rounded-full blur-[140px]" />
-          <div className="absolute top-1/3 left-1/2 w-[260px] h-[260px] bg-blue-500/10 rounded-full blur-[100px]" />
 
           <div className="relative z-10">
-            <div className="inline-flex items-center gap-2 text-cyan-300 mb-4 px-4 py-2 rounded-full bg-cyan-500/10 border border-cyan-400/20 shadow-[0_0_35px_rgba(34,211,238,0.12)]">
+            <div className="inline-flex items-center gap-2 text-cyan-300 mb-4 px-4 py-2 rounded-full bg-cyan-500/10 border border-cyan-400/20">
               <HelpCircle size={16} />
               Help Center
             </div>
@@ -240,9 +246,9 @@ function HelpSupport() {
             </h1>
 
             <p className="text-slate-400 mt-4 leading-8 max-w-3xl">
-              Search common Placiora AI problems and get instant solutions for
-              login, camera, microphone, coding, resume, interviews, GD,
-              settings and backend issues.
+              Search common Placiora AI problems and contact support for login,
+              camera, microphone, coding, resume, interviews, GD, settings and
+              backend issues.
             </p>
 
             <div className="mt-6 flex flex-wrap gap-3">
@@ -263,14 +269,12 @@ function HelpSupport() {
           onMouseMove={handleGlowMove}
           className="glow-card relative overflow-hidden rounded-[2rem] border border-cyan-400/10 bg-slate-950/70 p-5 flex items-center gap-3"
         >
-          <div className="absolute -right-20 -top-20 w-52 h-52 bg-cyan-500/10 rounded-full blur-[80px]" />
-
           <Search className="relative z-10 text-cyan-300" />
 
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search: login, mic, camera, coding, resume, theme, support email..."
+            placeholder="Search: login, mic, camera, coding, resume, support email..."
             className="relative z-10 flex-1 bg-transparent outline-none text-white placeholder:text-slate-500"
           />
 
@@ -285,22 +289,11 @@ function HelpSupport() {
           )}
         </div>
 
-        <div className="flex items-center justify-between gap-4">
-          <p className="text-slate-400">
-            Showing{" "}
-            <span className="text-cyan-300 font-semibold">
-              {filtered.length}
-            </span>{" "}
-            solution{filtered.length === 1 ? "" : "s"}
-          </p>
-
-          {searchText && (
-            <p className="text-slate-500 text-sm">
-              Search result for:{" "}
-              <span className="text-cyan-300">{query}</span>
-            </p>
-          )}
-        </div>
+        <p className="text-slate-400">
+          Showing{" "}
+          <span className="text-cyan-300 font-semibold">{filtered.length}</span>{" "}
+          solution{filtered.length === 1 ? "" : "s"}
+        </p>
 
         {filtered.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
@@ -318,12 +311,10 @@ function HelpSupport() {
             className="glow-card rounded-[2.5rem] border border-red-400/20 bg-red-500/10 p-8"
           >
             <AlertTriangle className="text-red-300 mb-4" size={34} />
-            <h2 className="text-2xl font-bold text-white">
-              No solution found
-            </h2>
+            <h2 className="text-2xl font-bold text-white">No solution found</h2>
             <p className="text-slate-400 mt-3">
-              Try searching with words like login, camera, mic, resume, coding,
-              theme, support email, network error or backend.
+              Try words like login, camera, mic, resume, coding, support email,
+              network error or backend.
             </p>
           </div>
         )}
@@ -344,7 +335,7 @@ function HelpSupport() {
               <select
                 value={category}
                 onChange={(e) => setCategory(e.target.value)}
-                className="bg-slate-900/80 border border-white/10 rounded-2xl px-5 py-4 text-white outline-none focus:border-cyan-400 focus:shadow-[0_0_28px_rgba(34,211,238,0.18)]"
+                className="bg-slate-900/80 border border-white/10 rounded-2xl px-5 py-4 text-white outline-none focus:border-cyan-400"
               >
                 <option>Technical</option>
                 <option>Login Issue</option>
@@ -353,7 +344,7 @@ function HelpSupport() {
                 <option>Account Issue</option>
               </select>
 
-              <div className="rounded-2xl border border-cyan-400/20 bg-cyan-500/10 px-5 py-4 text-cyan-300 flex items-center gap-2 shadow-[0_0_28px_rgba(34,211,238,0.08)]">
+              <div className="rounded-2xl border border-cyan-400/20 bg-cyan-500/10 px-5 py-4 text-cyan-300 flex items-center gap-2">
                 <Mail size={18} />
                 placiora.support@gmail.com
               </div>
@@ -363,7 +354,7 @@ function HelpSupport() {
               value={message}
               onChange={(e) => setMessage(e.target.value)}
               placeholder="Describe your issue..."
-              className="mt-5 w-full min-h-[150px] bg-slate-900/80 border border-white/10 rounded-2xl px-5 py-4 text-white outline-none focus:border-cyan-400 focus:shadow-[0_0_30px_rgba(34,211,238,0.18)]"
+              className="mt-5 w-full min-h-[150px] bg-slate-900/80 border border-white/10 rounded-2xl px-5 py-4 text-white outline-none focus:border-cyan-400"
             />
 
             {status && (
@@ -380,7 +371,7 @@ function HelpSupport() {
                 ) : (
                   <AlertTriangle size={18} />
                 )}
-                {status.text}
+                <span>{status.text}</span>
               </div>
             )}
 
@@ -388,7 +379,7 @@ function HelpSupport() {
               type="button"
               onClick={submitTicket}
               disabled={sending}
-              className="glow-button mt-5 px-7 py-4 rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-700 text-white font-semibold flex items-center gap-2 disabled:opacity-60 shadow-[0_0_35px_rgba(34,211,238,0.2)]"
+              className="glow-button mt-5 px-7 py-4 rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-700 text-white font-semibold flex items-center gap-2 disabled:opacity-60"
             >
               <Send size={18} />
               {sending ? "Sending..." : "Submit Support Request"}
@@ -410,9 +401,7 @@ function HelpCard({ icon: Icon, title, text, onMouseMove }) {
 
       <div className="relative z-10">
         <Icon size={32} className="text-cyan-300 mb-4" />
-
         <h3 className="text-xl font-bold text-white">{title}</h3>
-
         <p className="text-slate-400 mt-3 leading-7">{text}</p>
       </div>
     </div>
