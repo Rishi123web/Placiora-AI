@@ -17,7 +17,7 @@ const getRoom = (roomId) => {
 }
 
 const getAiCount = (humanCount) => {
-  return Math.max(0, MAX_LIVE_GD_MEMBERS - humanCount)
+  return Math.max(0, MAX_LIVE_GD_MEMBERS - Number(humanCount || 0))
 }
 
 const emitRoomState = (io, roomId) => {
@@ -88,6 +88,7 @@ const setupLiveGDSocket = (io) => {
       })
 
       room.users = filteredUsers.slice(0, MAX_LIVE_GD_MEMBERS)
+
       liveGDRooms.set(roomId, room)
 
       emitRoomState(io, roomId)
@@ -135,10 +136,12 @@ const setupLiveGDSocket = (io) => {
 
       if (alreadyAdmitted) {
         socket.join(roomId)
+
         socket.emit("live-gd-admitted", {
           roomId,
           users: room.users
         })
+
         emitRoomState(io, roomId)
         return
       }
@@ -260,6 +263,7 @@ const setupLiveGDSocket = (io) => {
       }
 
       room.pending = room.pending.filter((user) => user.socketId !== socketId)
+
       liveGDRooms.set(roomId, room)
 
       io.to(socketId).emit("live-gd-rejected", {
@@ -338,7 +342,9 @@ const setupLiveGDSocket = (io) => {
       if (!roomId) return
 
       const room = getRoom(roomId)
+
       room.meetingStatus = "live"
+
       liveGDRooms.set(roomId, room)
 
       io.to(roomId).emit("live-gd-started", {
@@ -355,7 +361,9 @@ const setupLiveGDSocket = (io) => {
       if (!roomId) return
 
       const room = getRoom(roomId)
+
       room.meetingStatus = "ended"
+
       liveGDRooms.set(roomId, room)
 
       io.to(roomId).emit("live-gd-ended", {
@@ -375,12 +383,15 @@ const setupLiveGDSocket = (io) => {
         )
 
         room.users = room.users.filter((user) => user.socketId !== socket.id)
+
         room.pending = room.pending.filter(
           (user) => user.socketId !== socket.id
         )
 
         if (room.hostSocketId === socket.id) {
-          const nextHost = room.users.find((user) => user.socketId !== socket.id)
+          const nextHost = room.users.find(
+            (user) => user.socketId !== socket.id
+          )
 
           if (nextHost) {
             room.hostSocketId = nextHost.socketId

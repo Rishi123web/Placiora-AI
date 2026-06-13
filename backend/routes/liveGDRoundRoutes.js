@@ -97,8 +97,15 @@ const AI_PARTICIPANTS = [
   }
 ]
 
-const generateInviteCode = () => {
-  return Math.random().toString(36).substring(2, 8).toUpperCase()
+const generateMeetingCode = () => {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+  let code = ""
+
+  for (let i = 0; i < 8; i++) {
+    code += chars[Math.floor(Math.random() * chars.length)]
+  }
+
+  return code
 }
 
 const getActiveAiParticipants = (humanCount = 1) => {
@@ -153,7 +160,7 @@ const createTranscript = (messages = []) => {
 const openingMessages = (topic, humanCount = 1) => {
   const activeAi = getActiveAiParticipants(humanCount)
 
-  const base = [
+  const messages = [
     {
       speaker: "ai",
       name: "Moderator",
@@ -175,16 +182,18 @@ const openingMessages = (topic, humanCount = 1) => {
   }
 
   activeAi.forEach((ai) => {
-    base.push({
+    messages.push({
       speaker: "ai",
       name: ai.name,
       role: "AI Participant",
       personality: ai.personality,
-      message: introMap[ai.name] || "I am ready to contribute to the discussion."
+      message:
+        introMap[ai.name] ||
+        "I am ready to contribute to the discussion."
     })
   })
 
-  return base
+  return messages
 }
 
 const fallbackAiReplies = (topic, activeAi = []) => {
@@ -196,7 +205,7 @@ const fallbackAiReplies = (topic, activeAi = []) => {
         role: "Moderator",
         personality: "Moderator",
         message:
-          "Thank you for the point. Please add one example and also respond to another participant's view to make your argument stronger."
+          "Thank you for the point. Please add one example and respond to another participant's view to make your argument stronger."
       }
     ]
   }
@@ -360,9 +369,9 @@ router.post("/create-room", async (req, res) => {
       company = "General"
     } = req.body || {}
 
-    const inviteCode = generateInviteCode()
-    const meetingCode = inviteCode
-    const inviteLink = `${FRONTEND_URL}/live-gd-round?invite=${inviteCode}`
+    const meetingCode = generateMeetingCode()
+    const inviteCode = meetingCode
+    const inviteLink = `${FRONTEND_URL}/live-gd-round?invite=${meetingCode}`
 
     const hostObjectId =
       userId && mongoose.Types.ObjectId.isValid(userId)
@@ -409,9 +418,9 @@ router.post("/create-room", async (req, res) => {
 
     res.status(201).json({
       success: true,
-      roundId: round._id,
-      inviteCode: round.inviteCode,
+      roundId: round._id.toString(),
       meetingCode: round.meetingCode,
+      inviteCode: round.inviteCode,
       inviteLink: round.inviteLink,
       round
     })

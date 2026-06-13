@@ -46,6 +46,10 @@ const pendingParticipantSchema = new mongoose.Schema(
       ref: "User",
       default: null
     },
+    socketId: {
+      type: String,
+      default: ""
+    },
     name: {
       type: String,
       default: ""
