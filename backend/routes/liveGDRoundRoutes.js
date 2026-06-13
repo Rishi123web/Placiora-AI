@@ -9,16 +9,22 @@ import LiveGDRound from "../models/LiveGDRound.js"
 
 const router = express.Router()
 
-if (!fs.existsSync("uploads")) fs.mkdirSync("uploads")
+if (!fs.existsSync("uploads")) {
+  fs.mkdirSync("uploads")
+}
 
 const storage = multer.diskStorage({
   destination: "uploads/",
-  filename: (req, file, cb) => cb(null, `live-gd-${Date.now()}.webm`)
+  filename: (req, file, cb) => {
+    cb(null, `live-gd-${Date.now()}.webm`)
+  }
 })
 
 const upload = multer({
   storage,
-  limits: { fileSize: 25 * 1024 * 1024 }
+  limits: {
+    fileSize: 25 * 1024 * 1024
+  }
 })
 
 const FRONTEND_URL =
@@ -94,10 +100,25 @@ const AI_PARTICIPANTS = [
 const generateMeetingCode = () => {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
   let code = ""
+
   for (let i = 0; i < 8; i++) {
     code += chars[Math.floor(Math.random() * chars.length)]
   }
+
   return code
+}
+
+const getUniqueMeetingCode = async () => {
+  for (let i = 0; i < 8; i++) {
+    const code = generateMeetingCode()
+    const exists = await LiveGDRound.exists({
+      $or: [{ inviteCode: code }, { meetingCode: code }]
+    })
+
+    if (!exists) return code
+  }
+
+  return `${generateMeetingCode()}${Date.now().toString().slice(-2)}`
 }
 
 const getActiveAiParticipants = (humanCount = 1) => {
@@ -113,6 +134,7 @@ const getActiveAiParticipants = (humanCount = 1) => {
 
 const getGroqClient = () => {
   const apiKey = process.env.GROQ_API_KEY?.trim()
+
   if (!apiKey) return null
 
   return new OpenAI({
@@ -131,6 +153,7 @@ const extractJSON = (text = "") => {
     return JSON.parse(text)
   } catch {
     const match = text.match(/\{[\s\S]*\}/)
+
     if (!match) return null
 
     try {
@@ -177,7 +200,9 @@ const openingMessages = (topic, humanCount = 1) => {
       name: ai.name,
       role: "AI Participant",
       personality: ai.personality,
-      message: introMap[ai.name] || "I am ready to contribute to the discussion."
+      message:
+        introMap[ai.name] ||
+        "I am ready to contribute to the discussion."
     })
   })
 
@@ -238,6 +263,7 @@ const fallbackEvaluation = (messages = []) => {
   const words = userText.split(/\s+/).filter(Boolean).length
 
   let score = 45
+
   if (words > 20) score += 10
   if (words > 50) score += 10
   if (words > 90) score += 10
@@ -322,7 +348,9 @@ router.post("/transcribe", upload.single("audio"), async (req, res) => {
       response_format: "json"
     })
 
-    if (fs.existsSync(filePath)) fs.unlinkSync(filePath)
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath)
+    }
 
     res.status(200).json({
       success: true,
@@ -331,7 +359,9 @@ router.post("/transcribe", upload.single("audio"), async (req, res) => {
   } catch (error) {
     console.log("Live GD transcription error:", error)
 
-    if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath)
+    if (filePath && fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath)
+    }
 
     res.status(500).json({
       success: false,
@@ -352,7 +382,7 @@ router.post("/create-room", async (req, res) => {
       company = "General"
     } = req.body || {}
 
-    const meetingCode = generateMeetingCode()
+    const meetingCode = await getUniqueMeetingCode()
     const inviteCode = meetingCode
     const inviteLink = `${FRONTEND_URL}/live-gd-round?invite=${meetingCode}`
 
@@ -460,6 +490,7 @@ router.post("/join-room", async (req, res) => {
       if (userId && participant.userId) {
         return participant.userId.toString() === userId
       }
+
       return participant.email && participant.email === email
     })
 
@@ -483,6 +514,7 @@ router.post("/join-room", async (req, res) => {
       if (userId && participant.userId) {
         return participant.userId.toString() === userId
       }
+
       return participant.email && participant.email === email
     })
 
@@ -582,6 +614,7 @@ router.post("/admit-user", async (req, res) => {
       if (userId && participant.userId) {
         return participant.userId.toString() === userId
       }
+
       return email && participant.email === email
     })
 
@@ -597,6 +630,7 @@ router.post("/admit-user", async (req, res) => {
         if (userId && participant.userId) {
           return participant.userId.toString() !== userId
         }
+
         return participant.email !== email
       }
     )
@@ -653,6 +687,7 @@ router.post("/reject-user", async (req, res) => {
         if (userId && participant.userId) {
           return participant.userId.toString() !== userId
         }
+
         return participant.email !== email
       }
     )
@@ -811,7 +846,9 @@ Rules:
 
         if (parsed?.aiReplies && Array.isArray(parsed.aiReplies)) {
           const allowedNames =
-            activeAi.length > 0 ? activeAi.map((item) => item.name) : ["Moderator"]
+            activeAi.length > 0
+              ? activeAi.map((item) => item.name)
+              : ["Moderator"]
 
           aiReplies = parsed.aiReplies
             .filter((reply) => reply?.message)
@@ -841,7 +878,8 @@ Rules:
             leadershipScore: clampScore(parsed.userEvaluation.leadershipScore),
             confidenceScore: clampScore(parsed.userEvaluation.confidenceScore),
             relevanceScore: clampScore(parsed.userEvaluation.relevanceScore),
-            feedback: parsed.userEvaluation.feedback || userEvaluation.feedback
+            feedback:
+              parsed.userEvaluation.feedback || userEvaluation.feedback
           }
         }
       } catch (error) {
