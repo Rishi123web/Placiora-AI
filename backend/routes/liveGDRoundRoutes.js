@@ -27,6 +27,11 @@ const upload = multer({
   }
 })
 
+const FRONTEND_URL =
+  process.env.CLIENT_URL ||
+  process.env.FRONTEND_URL ||
+  "http://localhost:5173"
+
 const companyOptions = [
   "General",
   "Google",
@@ -96,6 +101,17 @@ const generateInviteCode = () => {
   return Math.random().toString(36).substring(2, 8).toUpperCase()
 }
 
+const getActiveAiParticipants = (humanCount = 1) => {
+  const needed = Math.max(0, 5 - Number(humanCount || 0))
+
+  return AI_PARTICIPANTS.slice(0, needed).map((item) => ({
+    name: item.name,
+    role: item.role,
+    personality: item.personality,
+    active: true
+  }))
+}
+
 const getGroqClient = () => {
   const apiKey = process.env.GROQ_API_KEY?.trim()
 
@@ -134,65 +150,77 @@ const createTranscript = (messages = []) => {
     .join("\n")
 }
 
-const openingMessages = (topic) => [
-  {
-    speaker: "ai",
-    name: "Moderator",
-    role: "Moderator",
-    personality: "Moderator",
-    message: `Welcome everyone. Today's group discussion topic is: ${topic}. Please speak clearly, support your points with examples, respond to others, and try to conclude with a balanced view.`
-  },
-  {
-    speaker: "ai",
-    name: "Priya",
-    role: "AI Participant",
-    personality: "Analytical",
-    message:
-      "I think we should first define the topic and then discuss both positive and negative sides."
-  },
-  {
-    speaker: "ai",
-    name: "Rahul",
-    role: "AI Participant",
-    personality: "Technical",
-    message:
-      "I agree. We should also bring practical industry examples and not keep the discussion theoretical."
-  },
-  {
-    speaker: "ai",
-    name: "Neha",
-    role: "AI Participant",
-    personality: "Critical Thinker",
-    message:
+const openingMessages = (topic, humanCount = 1) => {
+  const activeAi = getActiveAiParticipants(humanCount)
+
+  const base = [
+    {
+      speaker: "ai",
+      name: "Moderator",
+      role: "Moderator",
+      personality: "Moderator",
+      message: `Welcome everyone. Today's group discussion topic is: ${topic}. Please speak clearly, support your points with examples, respond to others, and try to conclude with a balanced view.`
+    }
+  ]
+
+  const introMap = {
+    Priya:
+      "I think we should first define the topic and then discuss both positive and negative sides.",
+    Rahul:
+      "I agree. We should also bring practical industry examples and not keep the discussion theoretical.",
+    Aarav:
+      "I can help keep the flow structured. We should discuss causes, impact and possible solutions.",
+    Neha:
       "Along with benefits, we should not ignore risks, ethics and long-term consequences."
   }
-]
 
-const fallbackAiReplies = (topic) => [
-  {
-    speaker: "ai",
-    name: "Priya",
-    role: "AI Participant",
-    personality: "Analytical",
-    message: `That's a valid point. I would add that for ${topic}, we should compare both short-term and long-term impact.`
-  },
-  {
-    speaker: "ai",
-    name: "Rahul",
-    role: "AI Participant",
-    personality: "Technical",
-    message:
-      "I partially agree, but this point becomes stronger if we support it with a real example or data."
-  },
-  {
-    speaker: "ai",
-    name: "Neha",
-    role: "AI Participant",
-    personality: "Critical Thinker",
-    message:
+  activeAi.forEach((ai) => {
+    base.push({
+      speaker: "ai",
+      name: ai.name,
+      role: "AI Participant",
+      personality: ai.personality,
+      message: introMap[ai.name] || "I am ready to contribute to the discussion."
+    })
+  })
+
+  return base
+}
+
+const fallbackAiReplies = (topic, activeAi = []) => {
+  if (!activeAi.length) {
+    return [
+      {
+        speaker: "ai",
+        name: "Moderator",
+        role: "Moderator",
+        personality: "Moderator",
+        message:
+          "Thank you for the point. Please add one example and also respond to another participant's view to make your argument stronger."
+      }
+    ]
+  }
+
+  const fallbackMap = {
+    Priya: `That's a valid point. I would add that for ${topic}, we should compare both short-term and long-term impact.`,
+    Rahul:
+      "I partially agree, but this point becomes stronger if we support it with a real example or data.",
+    Aarav:
+      "Let me connect this with the group flow. We can divide the discussion into opportunities, risks and solutions.",
+    Neha:
       "I would like to challenge one part of that. We should also discuss who may be negatively affected."
   }
-]
+
+  return activeAi.slice(0, 3).map((ai) => ({
+    speaker: "ai",
+    name: ai.name,
+    role: "AI Participant",
+    personality: ai.personality,
+    message:
+      fallbackMap[ai.name] ||
+      `I agree partly. For ${topic}, we should keep the answer balanced with examples.`
+  }))
+}
 
 const fallbackUserEvaluation = () => ({
   communicationScore: 65,
@@ -333,37 +361,49 @@ router.post("/create-room", async (req, res) => {
     } = req.body || {}
 
     const inviteCode = generateInviteCode()
-    const inviteLink = `http://localhost:5173/live-gd-round?invite=${inviteCode}`
-    const messages = openingMessages(topic)
+    const meetingCode = inviteCode
+    const inviteLink = `${FRONTEND_URL}/live-gd-round?invite=${inviteCode}`
 
-    const participants = []
+    const hostObjectId =
+      userId && mongoose.Types.ObjectId.isValid(userId)
+        ? new mongoose.Types.ObjectId(userId)
+        : null
 
-    if (userId && mongoose.Types.ObjectId.isValid(userId)) {
-      participants.push({
-        userId: new mongoose.Types.ObjectId(userId),
+    const participants = [
+      {
+        userId: hostObjectId,
         name,
         email,
         role: "Host",
+        isHost: true,
         micReady: false,
         cameraReady: false
-      })
-    }
+      }
+    ]
+
+    const aiParticipants = getActiveAiParticipants(participants.length)
+    const messages = openingMessages(topic, participants.length)
 
     const round = await LiveGDRound.create({
-      userId:
-        userId && mongoose.Types.ObjectId.isValid(userId)
-          ? new mongoose.Types.ObjectId(userId)
-          : null,
+      userId: hostObjectId,
+      hostId: hostObjectId,
+      hostName: name,
       topic,
       difficulty,
       company,
       inviteCode,
+      meetingCode,
       inviteLink,
+      meetingStatus: "live",
+      requiresApproval: true,
       isMultiplayer: true,
       maxParticipants: 5,
       participants,
+      pendingParticipants: [],
+      aiParticipants,
       messages,
       transcript: createTranscript(messages),
+      startedAt: new Date(),
       completed: false
     })
 
@@ -371,6 +411,7 @@ router.post("/create-room", async (req, res) => {
       success: true,
       roundId: round._id,
       inviteCode: round.inviteCode,
+      meetingCode: round.meetingCode,
       inviteLink: round.inviteLink,
       round
     })
@@ -393,27 +434,31 @@ router.post("/join-room", async (req, res) => {
     if (!inviteCode) {
       return res.status(400).json({
         success: false,
-        message: "Invite code is required"
+        message: "Meeting code is required"
       })
     }
 
-    const round = await LiveGDRound.findOne({ inviteCode })
+    const cleanCode = inviteCode.trim().toUpperCase()
+
+    const round = await LiveGDRound.findOne({
+      $or: [{ inviteCode: cleanCode }, { meetingCode: cleanCode }]
+    })
 
     if (!round) {
       return res.status(404).json({
         success: false,
-        message: "GD room not found"
+        message: "GD meeting not found"
       })
     }
 
-    if (round.completed) {
+    if (round.completed || round.meetingStatus === "ended") {
       return res.status(400).json({
         success: false,
-        message: "This GD room is already completed"
+        message: "This GD meeting is already completed"
       })
     }
 
-    const alreadyJoined = round.participants.some((participant) => {
+    const alreadyParticipant = round.participants.some((participant) => {
       if (userId && participant.userId) {
         return participant.userId.toString() === userId
       }
@@ -421,24 +466,39 @@ router.post("/join-room", async (req, res) => {
       return participant.email && participant.email === email
     })
 
-    if (!alreadyJoined && round.participants.length >= round.maxParticipants) {
-      return res.status(400).json({
-        success: false,
-        message: "GD room is full. Maximum 5 members can join."
+    if (alreadyParticipant) {
+      return res.status(200).json({
+        success: true,
+        admitted: true,
+        waiting: false,
+        round
       })
     }
 
-    if (!alreadyJoined) {
-      round.participants.push({
+    if (round.participants.length >= round.maxParticipants) {
+      return res.status(400).json({
+        success: false,
+        message: "GD meeting is full. Maximum 5 human members can join."
+      })
+    }
+
+    const alreadyPending = round.pendingParticipants.some((participant) => {
+      if (userId && participant.userId) {
+        return participant.userId.toString() === userId
+      }
+
+      return participant.email && participant.email === email
+    })
+
+    if (!alreadyPending) {
+      round.pendingParticipants.push({
         userId:
           userId && mongoose.Types.ObjectId.isValid(userId)
             ? new mongoose.Types.ObjectId(userId)
             : null,
         name,
         email,
-        role: "Participant",
-        micReady: false,
-        cameraReady: false
+        role: "Participant"
       })
 
       await round.save()
@@ -446,6 +506,9 @@ router.post("/join-room", async (req, res) => {
 
     res.status(200).json({
       success: true,
+      admitted: false,
+      waiting: true,
+      message: "Join request sent. Waiting for host approval.",
       round
     })
   } catch (error) {
@@ -454,6 +517,163 @@ router.post("/join-room", async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Join room failed",
+      error: error.message
+    })
+  }
+})
+
+router.get("/room/:roundId", async (req, res) => {
+  try {
+    const { roundId } = req.params
+
+    if (!mongoose.Types.ObjectId.isValid(roundId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid room ID"
+      })
+    }
+
+    const round = await LiveGDRound.findById(roundId)
+
+    if (!round) {
+      return res.status(404).json({
+        success: false,
+        message: "GD room not found"
+      })
+    }
+
+    res.json({
+      success: true,
+      round
+    })
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Failed to load room",
+      error: error.message
+    })
+  }
+})
+
+router.post("/admit-user", async (req, res) => {
+  try {
+    const { roundId, userId = "", email = "" } = req.body || {}
+
+    if (!roundId || !mongoose.Types.ObjectId.isValid(roundId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Valid room ID required"
+      })
+    }
+
+    const round = await LiveGDRound.findById(roundId)
+
+    if (!round) {
+      return res.status(404).json({
+        success: false,
+        message: "GD room not found"
+      })
+    }
+
+    if (round.participants.length >= round.maxParticipants) {
+      return res.status(400).json({
+        success: false,
+        message: "Room already has 5 human members"
+      })
+    }
+
+    const pending = round.pendingParticipants.find((participant) => {
+      if (userId && participant.userId) {
+        return participant.userId.toString() === userId
+      }
+
+      return email && participant.email === email
+    })
+
+    if (!pending) {
+      return res.status(404).json({
+        success: false,
+        message: "Pending user not found"
+      })
+    }
+
+    round.pendingParticipants = round.pendingParticipants.filter(
+      (participant) => {
+        if (userId && participant.userId) {
+          return participant.userId.toString() !== userId
+        }
+
+        return participant.email !== email
+      }
+    )
+
+    round.participants.push({
+      userId: pending.userId || null,
+      name: pending.name,
+      email: pending.email,
+      role: "Participant",
+      isHost: false,
+      micReady: false,
+      cameraReady: false
+    })
+
+    round.aiParticipants = getActiveAiParticipants(round.participants.length)
+
+    await round.save()
+
+    res.json({
+      success: true,
+      round
+    })
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Admit user failed",
+      error: error.message
+    })
+  }
+})
+
+router.post("/reject-user", async (req, res) => {
+  try {
+    const { roundId, userId = "", email = "" } = req.body || {}
+
+    if (!roundId || !mongoose.Types.ObjectId.isValid(roundId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Valid room ID required"
+      })
+    }
+
+    const round = await LiveGDRound.findById(roundId)
+
+    if (!round) {
+      return res.status(404).json({
+        success: false,
+        message: "GD room not found"
+      })
+    }
+
+    round.pendingParticipants = round.pendingParticipants.filter(
+      (participant) => {
+        if (userId && participant.userId) {
+          return participant.userId.toString() !== userId
+        }
+
+        return participant.email !== email
+      }
+    )
+
+    await round.save()
+
+    res.json({
+      success: true,
+      round
+    })
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Reject user failed",
       error: error.message
     })
   }
@@ -492,12 +712,16 @@ router.post("/speak", async (req, res) => {
       })
     }
 
-    if (round.completed) {
+    if (round.completed || round.meetingStatus === "ended") {
       return res.status(400).json({
         success: false,
         message: "This GD round is already completed"
       })
     }
+
+    const activeAi =
+      round.aiParticipants?.filter((item) => item.active) ||
+      getActiveAiParticipants(round.participants.length)
 
     const userMessage = {
       speaker: "user",
@@ -510,11 +734,23 @@ router.post("/speak", async (req, res) => {
     round.messages.push(userMessage)
 
     const groq = getGroqClient()
-    let aiReplies = fallbackAiReplies(round.topic)
+    let aiReplies = fallbackAiReplies(round.topic, activeAi)
     let userEvaluation = fallbackUserEvaluation()
 
     if (groq) {
       try {
+        const aiListForPrompt =
+          activeAi.length > 0
+            ? activeAi
+                .map((p) => {
+                  const full = AI_PARTICIPANTS.find((x) => x.name === p.name)
+                  return `- ${p.name}: ${p.personality}, style: ${
+                    full?.style || "balanced GD participant"
+                  }`
+                })
+                .join("\n")
+            : "- Moderator only: ask follow-up questions and keep the GD structured."
+
         const prompt = `
 You are running a realistic campus placement group discussion.
 
@@ -522,10 +758,8 @@ Topic: ${round.topic}
 Difficulty: ${round.difficulty}
 Company: ${round.company}
 
-AI Participants:
-${AI_PARTICIPANTS.map(
-  (p) => `- ${p.name}: ${p.personality}, style: ${p.style}`
-).join("\n")}
+Active AI Members:
+${aiListForPrompt}
 
 Conversation so far:
 ${createTranscript(round.messages)}
@@ -533,7 +767,9 @@ ${createTranscript(round.messages)}
 Candidate ${name} said:
 ${message}
 
-Generate realistic GD reactions from 2 or 3 AI participants.
+Generate realistic GD reactions.
+If active AI members are available, generate replies from 1 to 3 AI participants.
+If no active AI members are available, generate one Moderator reply only.
 Also evaluate the candidate's latest answer.
 
 Return ONLY valid JSON:
@@ -558,12 +794,13 @@ Return ONLY valid JSON:
 }
 
 Rules:
+- Use only active AI members listed above.
+- If no active AI members are listed, use only Moderator.
 - AI replies should feel like a normal GD.
-- At least one AI should agree or expand.
-- At least one AI should challenge, ask for data, or give a counterpoint.
-- Keep every AI reply under 55 words.
+- At least one reply should agree, expand, challenge, or ask for clarity.
+- Keep every reply under 55 words.
 - Do not overpraise.
-- Candidate evaluation scores must be 0 to 100.
+- Scores must be 0 to 100.
 `
 
         const response = await Promise.race([
@@ -580,14 +817,26 @@ Rules:
         const parsed = extractJSON(response.choices?.[0]?.message?.content)
 
         if (parsed?.aiReplies && Array.isArray(parsed.aiReplies)) {
+          const allowedNames =
+            activeAi.length > 0
+              ? activeAi.map((item) => item.name)
+              : ["Moderator"]
+
           aiReplies = parsed.aiReplies
             .filter((reply) => reply?.message)
-            .slice(0, 3)
+            .filter((reply) => allowedNames.includes(reply.name || "Moderator"))
+            .slice(0, activeAi.length > 0 ? 3 : 1)
             .map((reply) => ({
               speaker: "ai",
-              name: reply.name || "Priya",
-              role: reply.role || "AI Participant",
-              personality: reply.personality || "Balanced",
+              name: reply.name || (activeAi.length ? "Priya" : "Moderator"),
+              role:
+                reply.name === "Moderator"
+                  ? "Moderator"
+                  : reply.role || "AI Participant",
+              personality:
+                reply.name === "Moderator"
+                  ? "Moderator"
+                  : reply.personality || "Balanced",
               message: reply.message
             }))
         }
@@ -620,7 +869,8 @@ Rules:
       messages: round.messages,
       userMessage,
       aiReplies,
-      userEvaluation
+      userEvaluation,
+      aiParticipants: round.aiParticipants
     })
   } catch (error) {
     console.log("Live GD speak error:", error)
@@ -757,6 +1007,8 @@ Rules:
     round.improvedResponse = result.improvedResponse
     round.transcript = createTranscript(round.messages)
     round.completed = true
+    round.meetingStatus = "ended"
+    round.endedAt = new Date()
 
     await round.save()
 

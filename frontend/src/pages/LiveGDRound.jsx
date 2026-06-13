@@ -24,7 +24,13 @@ import {
   Activity,
   Brain,
   Target,
-  ShieldCheck
+  ShieldCheck,
+  UserCheck,
+  UserX,
+  Clock,
+  Link2,
+  KeyRound,
+  Bot
 } from "lucide-react"
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:5000"
@@ -67,6 +73,7 @@ function LiveGDRound() {
 
   const [roundId, setRoundId] = useState("")
   const [inviteCode, setInviteCode] = useState("")
+  const [meetingCode, setMeetingCode] = useState("")
   const [inviteInput, setInviteInput] = useState("")
   const [inviteLink, setInviteLink] = useState("")
   const [isHost, setIsHost] = useState(false)
@@ -74,6 +81,13 @@ function LiveGDRound() {
 
   const [messages, setMessages] = useState([])
   const [participants, setParticipants] = useState([])
+  const [pendingParticipants, setPendingParticipants] = useState([])
+  const [aiParticipants, setAiParticipants] = useState([])
+  const [roomState, setRoomState] = useState(null)
+
+  const [waitingApproval, setWaitingApproval] = useState(false)
+  const [rejected, setRejected] = useState(false)
+
   const [userMessage, setUserMessage] = useState("")
   const [result, setResult] = useState(null)
   const [liveEvaluation, setLiveEvaluation] = useState(null)
@@ -107,6 +121,13 @@ function LiveGDRound() {
   const userId = user?._id || user?.id || ""
   const userName = user?.name || "Participant"
   const userEmail = user?.email || ""
+
+  const humanCount = participants.length
+  const maxMembers = roomState?.maxMembers || 5
+  const aiCount =
+    typeof roomState?.aiCount === "number"
+      ? roomState.aiCount
+      : Math.max(0, 5 - humanCount)
 
   const handleMouseMove = (e) => {
     const card = e.currentTarget
@@ -204,22 +225,28 @@ function LiveGDRound() {
     window.speechSynthesis.speak(utterance)
   }
 
-  const connectSocket = (room, hostStatus = false) => {
-    if (!room) return
+  const applyRoundData = (round) => {
+    if (!round) return
 
-    if (!socketRef.current) {
-      socketRef.current = io(SOCKET_URL, {
-        withCredentials: true
-      })
-    }
+    setRoundId(round._id || "")
+    setInviteCode(round.inviteCode || "")
+    setMeetingCode(round.meetingCode || round.inviteCode || "")
+    setInviteLink(
+      round.inviteLink ||
+        `${window.location.origin}/live-gd-round?invite=${round.inviteCode}`
+    )
+    setTopic(round.topic || "Impact of AI on Jobs")
+    setDifficulty(round.difficulty || "Beginner")
+    setCompany(round.company || "General")
+    setMessages(round.messages || [])
+    setParticipants(round.participants || [])
+    setPendingParticipants(round.pendingParticipants || [])
+    setAiParticipants(round.aiParticipants || [])
+    setStarted(round.meetingStatus !== "ended")
+  }
 
-    socketRef.current.emit("live-gd-join-room", {
-      roomId: room,
-      userId,
-      name: userName,
-      email: userEmail,
-      role: hostStatus ? "Host" : "Participant"
-    })
+  const registerSocketListeners = () => {
+    if (!socketRef.current) return
 
     socketRef.current.off("live-gd-users-updated")
     socketRef.current.off("live-gd-new-message")
@@ -227,9 +254,71 @@ function LiveGDRound() {
     socketRef.current.off("live-gd-ended")
     socketRef.current.off("live-gd-started")
     socketRef.current.off("live-gd-room-full")
+    socketRef.current.off("live-gd-room-state")
+    socketRef.current.off("live-gd-pending-updated")
+    socketRef.current.off("live-gd-join-request")
+    socketRef.current.off("live-gd-waiting-room")
+    socketRef.current.off("live-gd-admitted")
+    socketRef.current.off("live-gd-rejected")
+    socketRef.current.off("live-gd-host-transferred")
+    socketRef.current.off("live-gd-error")
 
     socketRef.current.on("live-gd-users-updated", (users) => {
       setParticipants(Array.isArray(users) ? users : [])
+    })
+
+    socketRef.current.on("live-gd-room-state", (state) => {
+      setRoomState(state)
+      setParticipants(Array.isArray(state?.users) ? state.users : [])
+      setPendingParticipants(Array.isArray(state?.pending) ? state.pending : [])
+    })
+
+    socketRef.current.on("live-gd-pending-updated", (pending) => {
+      setPendingParticipants(Array.isArray(pending) ? pending : [])
+    })
+
+    socketRef.current.on("live-gd-join-request", (request) => {
+      setPendingParticipants((prev) => {
+        const exists = prev.some(
+          (item) =>
+            item.socketId === request.socketId ||
+            (request.email && item.email === request.email)
+        )
+        return exists ? prev : [...prev, request]
+      })
+
+      speakText(`${request.name || "A participant"} is waiting to join.`, "Moderator")
+    })
+
+    socketRef.current.on("live-gd-waiting-room", () => {
+      setWaitingApproval(true)
+      setRoomReady(false)
+      setStarted(false)
+    })
+
+    socketRef.current.on("live-gd-admitted", () => {
+      setWaitingApproval(false)
+      setRejected(false)
+      setRoomReady(true)
+      setStarted(true)
+
+      setTimeout(() => {
+        attachStreamToVideo()
+        emitDeviceReady()
+      }, 500)
+    })
+
+    socketRef.current.on("live-gd-rejected", (payload) => {
+      setRejected(true)
+      setWaitingApproval(false)
+      setRoomReady(false)
+      setStarted(false)
+      setError(payload?.message || "Host rejected your request.")
+    })
+
+    socketRef.current.on("live-gd-host-transferred", (payload) => {
+      setIsHost(true)
+      speakText(payload?.message || "You are now the meeting host.", "Moderator")
     })
 
     socketRef.current.on("live-gd-new-message", (messageData) => {
@@ -277,6 +366,40 @@ function LiveGDRound() {
     socketRef.current.on("live-gd-room-full", (payload) => {
       setError(payload?.message || "This GD room is full.")
     })
+
+    socketRef.current.on("live-gd-error", (payload) => {
+      setError(payload?.message || "Live GD socket error.")
+    })
+  }
+
+  const connectSocket = (room, hostStatus = false) => {
+    if (!room) return
+
+    if (!socketRef.current) {
+      socketRef.current = io(SOCKET_URL, {
+        withCredentials: true
+      })
+    }
+
+    registerSocketListeners()
+
+    if (hostStatus) {
+      socketRef.current.emit("live-gd-host-join", {
+        roomId: room,
+        userId,
+        name: userName,
+        email: userEmail,
+        role: "Host"
+      })
+    } else {
+      socketRef.current.emit("live-gd-request-join", {
+        roomId: room,
+        userId,
+        name: userName,
+        email: userEmail,
+        role: "Participant"
+      })
+    }
   }
 
   const initializeDevices = async () => {
@@ -434,6 +557,8 @@ function LiveGDRound() {
       setError("")
       setResult(null)
       setLiveEvaluation(null)
+      setWaitingApproval(false)
+      setRejected(false)
 
       const res = await fetch(`${API_URL}/create-room`, {
         method: "POST",
@@ -456,18 +581,10 @@ function LiveGDRound() {
         throw new Error(data.message || "Room creation failed")
       }
 
-      const newRoundId = data.roundId || data.round?._id
-      const newInviteCode = data.inviteCode || data.round?.inviteCode || ""
-      const newInviteLink =
-        data.inviteLink ||
-        data.round?.inviteLink ||
-        `${window.location.origin}/live-gd-round?invite=${newInviteCode}`
+      applyRoundData(data.round)
 
-      setRoundId(newRoundId)
-      setInviteCode(newInviteCode)
-      setInviteLink(newInviteLink)
-      setMessages(data.round?.messages || [])
-      setParticipants(data.round?.participants || [])
+      const newRoundId = data.roundId || data.round?._id
+
       setRoomReady(true)
       setStarted(true)
       setIsHost(true)
@@ -507,11 +624,12 @@ function LiveGDRound() {
       setError("")
       setResult(null)
       setLiveEvaluation(null)
+      setRejected(false)
 
       const cleanCode = inviteInput.trim().toUpperCase()
 
       if (!cleanCode) {
-        throw new Error("Invite code is required")
+        throw new Error("Meeting code is required")
       }
 
       const res = await fetch(`${API_URL}/join-room`, {
@@ -534,21 +652,21 @@ function LiveGDRound() {
       }
 
       const room = data.round
+      applyRoundData(room)
+      setIsHost(false)
 
-      setRoundId(room._id)
-      setInviteCode(room.inviteCode)
-      setInviteLink(
-        room.inviteLink ||
-          `${window.location.origin}/live-gd-round?invite=${room.inviteCode}`
-      )
-      setTopic(room.topic)
-      setDifficulty(room.difficulty)
-      setCompany(room.company)
-      setMessages(room.messages || [])
-      setParticipants(room.participants || [])
+      if (data.waiting) {
+        setWaitingApproval(true)
+        setRoomReady(false)
+        setStarted(false)
+        connectSocket(room._id, false)
+        speakText("Your request has been sent. Waiting for host approval.", "Moderator")
+        return
+      }
+
+      setWaitingApproval(false)
       setRoomReady(true)
       setStarted(true)
-      setIsHost(false)
 
       connectSocket(room._id, false)
 
@@ -568,6 +686,76 @@ function LiveGDRound() {
     }
   }
 
+  const admitParticipant = async (participant) => {
+    if (!isHost || !roundId) return
+
+    try {
+      setError("")
+
+      const res = await fetch(`${API_URL}/admit-user`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          roundId,
+          userId: participant.userId || "",
+          email: participant.email || ""
+        })
+      })
+
+      const data = await res.json()
+
+      if (!data.success) {
+        throw new Error(data.message || "Admit failed")
+      }
+
+      applyRoundData(data.round)
+
+      socketRef.current?.emit("live-gd-admit-user", {
+        roomId: roundId,
+        socketId: participant.socketId
+      })
+    } catch (err) {
+      setError(err.message)
+    }
+  }
+
+  const rejectParticipant = async (participant) => {
+    if (!isHost || !roundId) return
+
+    try {
+      setError("")
+
+      const res = await fetch(`${API_URL}/reject-user`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          roundId,
+          userId: participant.userId || "",
+          email: participant.email || ""
+        })
+      })
+
+      const data = await res.json()
+
+      if (!data.success) {
+        throw new Error(data.message || "Reject failed")
+      }
+
+      applyRoundData(data.round)
+
+      socketRef.current?.emit("live-gd-reject-user", {
+        roomId: roundId,
+        socketId: participant.socketId
+      })
+    } catch (err) {
+      setError(err.message)
+    }
+  }
+
   const copyInviteLink = async () => {
     const linkToCopy =
       inviteLink || `${window.location.origin}/live-gd-round?invite=${inviteCode}`
@@ -577,6 +765,15 @@ function LiveGDRound() {
       speakText("Meeting link copied.", "Moderator")
     } catch {
       setError("Could not copy meeting link.")
+    }
+  }
+
+  const copyMeetingCode = async () => {
+    try {
+      await navigator.clipboard.writeText(meetingCode || inviteCode)
+      speakText("Meeting code copied.", "Moderator")
+    } catch {
+      setError("Could not copy meeting code.")
     }
   }
 
@@ -708,6 +905,10 @@ function LiveGDRound() {
         setLiveEvaluation(data.userEvaluation)
       }
 
+      if (data.aiParticipants) {
+        setAiParticipants(data.aiParticipants)
+      }
+
       socketRef.current?.emit("live-gd-send-message", {
         roomId: roundId,
         message: currentMessage,
@@ -792,10 +993,16 @@ function LiveGDRound() {
 
     setRoundId("")
     setInviteCode("")
+    setMeetingCode("")
     setInviteLink("")
     setInviteInput("")
     setMessages([])
     setParticipants([])
+    setPendingParticipants([])
+    setAiParticipants([])
+    setRoomState(null)
+    setWaitingApproval(false)
+    setRejected(false)
     setUserMessage("")
     setStarted(false)
     setRoomReady(false)
@@ -830,7 +1037,7 @@ function LiveGDRound() {
               <div className="inline-flex items-center gap-2 text-cyan-300 mb-2 px-4 py-2 rounded-full bg-cyan-500/10 border border-cyan-400/20">
                 <Sparkles size={16} />
                 <span className="text-sm">
-                  Live GD Meeting + Multi-AI Moderator
+                  Google Meet Style GD + AI Moderator
                 </span>
               </div>
 
@@ -839,9 +1046,9 @@ function LiveGDRound() {
               </h1>
 
               <p className="text-slate-400 mt-3 leading-7 max-w-4xl">
-                Practice with real participants, AI candidates, different AI
-                voices, live answer evaluation, recruiter-style observation and
-                final GD performance report.
+                Create a GD meeting link, admit participants from the waiting
+                room, practice with up to 5 human members, and let AI candidates
+                fill empty seats automatically.
               </p>
             </div>
           </div>
@@ -853,7 +1060,16 @@ function LiveGDRound() {
           </div>
         )}
 
-        {!roomReady && !result && (
+        {waitingApproval && (
+          <WaitingRoom
+            meetingCode={meetingCode || inviteCode}
+            topic={topic}
+            company={company}
+            resetGD={resetGD}
+          />
+        )}
+
+        {!roomReady && !result && !waitingApproval && (
           <>
             <DeviceSection
               videoRef={videoRef}
@@ -872,13 +1088,13 @@ function LiveGDRound() {
               onMouseMove={handleMouseMove}
             />
 
-            {!hasInviteFromUrl && (
+            {!hasInviteFromUrl && !rejected && (
               <section
                 onMouseMove={handleMouseMove}
                 className="glow-card rounded-[2.3rem] p-6 border border-cyan-400/10 hover:border-cyan-300/30"
               >
                 <h2 className="text-2xl font-bold text-white mb-5">
-                  Host Setup: Start GD & Generate Meeting Link
+                  Host Setup: Create GD Meeting
                 </h2>
 
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -918,9 +1134,9 @@ function LiveGDRound() {
                     className="glow-button rounded-2xl bg-gradient-to-r from-cyan-500 to-purple-600 py-4 font-semibold disabled:opacity-50 text-white"
                   >
                     {loading
-                      ? "Starting..."
+                      ? "Creating..."
                       : deviceReady
-                      ? "Start GD & Generate Link"
+                      ? "Create Meeting"
                       : "Test Devices First"}
                   </button>
                 </div>
@@ -939,7 +1155,7 @@ function LiveGDRound() {
                 <input
                   value={inviteInput}
                   onChange={(e) => setInviteInput(e.target.value)}
-                  placeholder="Enter invite code"
+                  placeholder="Enter meeting code"
                   className="rounded-2xl bg-slate-900/80 border border-white/10 px-4 py-4 outline-none uppercase text-white focus:border-cyan-400"
                 />
 
@@ -950,7 +1166,7 @@ function LiveGDRound() {
                   className="rounded-2xl bg-emerald-600 hover:bg-emerald-700 px-8 py-4 font-semibold flex items-center justify-center gap-2 disabled:opacity-50 text-white"
                 >
                   <UserPlus size={18} />
-                  {deviceReady ? "Join GD Meeting" : "Test Devices First"}
+                  {deviceReady ? "Request To Join" : "Test Devices First"}
                 </button>
               </div>
             </section>
@@ -959,36 +1175,22 @@ function LiveGDRound() {
 
         {roomReady && started && (
           <>
-            <section
+            <MeetingInfoPanel
+              isHost={isHost}
+              inviteCode={inviteCode}
+              meetingCode={meetingCode}
+              inviteLink={inviteLink}
+              humanCount={humanCount}
+              maxMembers={maxMembers}
+              aiCount={aiCount}
+              aiParticipants={aiParticipants}
+              pendingParticipants={pendingParticipants}
+              copyInviteLink={copyInviteLink}
+              copyMeetingCode={copyMeetingCode}
+              admitParticipant={admitParticipant}
+              rejectParticipant={rejectParticipant}
               onMouseMove={handleMouseMove}
-              className="glow-card rounded-[2.3rem] p-6 border border-cyan-400/10 hover:border-cyan-300/30"
-            >
-              <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-                <div>
-                  <h2 className="text-2xl font-bold text-white">
-                    GD Meeting Room
-                  </h2>
-
-                  <p className="text-slate-400">
-                    Invite Code:{" "}
-                    <span className="text-cyan-300 font-bold">
-                      {inviteCode || "Generating..."}
-                    </span>
-                  </p>
-                </div>
-
-                {isHost && (
-                  <button
-                    type="button"
-                    onClick={copyInviteLink}
-                    className="rounded-2xl bg-white/10 hover:bg-white/15 px-5 py-3 font-semibold flex items-center gap-2 text-white"
-                  >
-                    <Clipboard size={18} />
-                    Copy Meeting Link
-                  </button>
-                )}
-              </div>
-            </section>
+            />
 
             {liveEvaluation && <LiveEvaluationPanel data={liveEvaluation} />}
 
@@ -1031,6 +1233,10 @@ function LiveGDRound() {
                       participant={participant}
                     />
                   ))}
+
+                  {aiParticipants.map((ai, index) => (
+                    <AIParticipantCard key={`${ai.name}-${index}`} ai={ai} />
+                  ))}
                 </div>
               </div>
 
@@ -1047,8 +1253,7 @@ function LiveGDRound() {
                     </h2>
 
                     <p className="text-slate-400">
-                      Human participants + Moderator + Priya, Rahul, Aarav and
-                      Neha.
+                      Human participants + AI Moderator + dynamic AI candidates.
                     </p>
                   </div>
                 </div>
@@ -1067,6 +1272,8 @@ function LiveGDRound() {
                             ? "bg-cyan-500/20 border-cyan-400/30"
                             : msg.name === "Moderator"
                             ? "bg-yellow-500/10 border-yellow-400/30"
+                            : msg.speaker === "system"
+                            ? "bg-slate-500/10 border-slate-400/20"
                             : "bg-purple-500/20 border-purple-400/30"
                         }`}
                       >
@@ -1144,6 +1351,209 @@ function LiveGDRound() {
         {result && <ResultSection result={result} />}
       </div>
     </MainLayout>
+  )
+}
+
+function MeetingInfoPanel({
+  isHost,
+  inviteCode,
+  meetingCode,
+  inviteLink,
+  humanCount,
+  maxMembers,
+  aiCount,
+  aiParticipants,
+  pendingParticipants,
+  copyInviteLink,
+  copyMeetingCode,
+  admitParticipant,
+  rejectParticipant,
+  onMouseMove
+}) {
+  return (
+    <section
+      onMouseMove={onMouseMove}
+      className="glow-card rounded-[2.3rem] p-6 border border-cyan-400/10 hover:border-cyan-300/30"
+    >
+      <div className="grid grid-cols-1 xl:grid-cols-[1.2fr_0.8fr] gap-6">
+        <div>
+          <h2 className="text-2xl font-bold text-white mb-4">
+            GD Meeting Room
+          </h2>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="rounded-2xl border border-cyan-400/20 bg-cyan-500/10 p-4">
+              <p className="text-slate-400 text-sm flex items-center gap-2">
+                <KeyRound size={16} />
+                Meeting Code
+              </p>
+              <h3 className="text-3xl font-black text-cyan-300 mt-1">
+                {meetingCode || inviteCode || "------"}
+              </h3>
+            </div>
+
+            <div className="rounded-2xl border border-purple-400/20 bg-purple-500/10 p-4">
+              <p className="text-slate-400 text-sm flex items-center gap-2">
+                <Users size={16} />
+                Seats
+              </p>
+              <h3 className="text-3xl font-black text-white mt-1">
+                {humanCount}/{maxMembers}
+              </h3>
+              <p className="text-purple-200 text-sm mt-1">
+                AI filling empty seats: {aiCount}
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-4 flex flex-wrap gap-3">
+            <button
+              type="button"
+              onClick={copyInviteLink}
+              className="rounded-2xl bg-white/10 hover:bg-white/15 px-5 py-3 font-semibold flex items-center gap-2 text-white"
+            >
+              <Link2 size={18} />
+              Copy Meeting Link
+            </button>
+
+            <button
+              type="button"
+              onClick={copyMeetingCode}
+              className="rounded-2xl bg-white/10 hover:bg-white/15 px-5 py-3 font-semibold flex items-center gap-2 text-white"
+            >
+              <Clipboard size={18} />
+              Copy Meeting Code
+            </button>
+          </div>
+
+          {inviteLink && (
+            <p className="text-slate-500 text-xs mt-3 break-all">
+              {inviteLink}
+            </p>
+          )}
+
+          <div className="mt-5 flex flex-wrap gap-2">
+            {aiParticipants.map((ai, index) => (
+              <span
+                key={`${ai.name}-${index}`}
+                className="rounded-full border border-purple-400/20 bg-purple-500/10 px-4 py-2 text-sm text-purple-200 flex items-center gap-2"
+              >
+                <Bot size={14} />
+                {ai.name}
+              </span>
+            ))}
+          </div>
+        </div>
+
+        {isHost && (
+          <div className="rounded-2xl border border-yellow-400/20 bg-yellow-500/10 p-4">
+            <h3 className="text-xl font-bold text-white mb-3">
+              Waiting Room
+            </h3>
+
+            {pendingParticipants.length === 0 ? (
+              <p className="text-slate-400 flex items-center gap-2">
+                <Clock size={16} />
+                No pending requests.
+              </p>
+            ) : (
+              <div className="space-y-3">
+                {pendingParticipants.map((item, index) => (
+                  <div
+                    key={item.socketId || item.email || index}
+                    className="rounded-xl border border-white/10 bg-slate-950/60 p-3"
+                  >
+                    <p className="font-semibold text-white">
+                      {item.name || "Participant"}
+                    </p>
+                    <p className="text-xs text-slate-400">
+                      {item.email || "No email"}
+                    </p>
+
+                    <div className="flex gap-2 mt-3">
+                      <button
+                        type="button"
+                        onClick={() => admitParticipant(item)}
+                        className="flex-1 rounded-xl bg-emerald-600 hover:bg-emerald-700 py-2 text-white font-semibold flex items-center justify-center gap-2"
+                      >
+                        <UserCheck size={16} />
+                        Admit
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => rejectParticipant(item)}
+                        className="flex-1 rounded-xl bg-red-500 hover:bg-red-600 py-2 text-white font-semibold flex items-center justify-center gap-2"
+                      >
+                        <UserX size={16} />
+                        Reject
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </section>
+  )
+}
+
+function WaitingRoom({ meetingCode, topic, company, resetGD }) {
+  return (
+    <section className="glow-card rounded-[2.5rem] border border-yellow-400/20 bg-yellow-500/10 p-8 text-center">
+      <Clock className="mx-auto text-yellow-300 mb-4" size={64} />
+
+      <h2 className="text-3xl font-black text-white">
+        Waiting for Host Approval
+      </h2>
+
+      <p className="text-slate-300 mt-3">
+        Your request has been sent. The meeting host must admit you before you
+        can enter.
+      </p>
+
+      <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+        <MiniInfo title="Meeting Code" value={meetingCode || "------"} />
+        <MiniInfo title="Topic" value={topic} />
+        <MiniInfo title="Company" value={company} />
+      </div>
+
+      <button
+        type="button"
+        onClick={resetGD}
+        className="mt-7 rounded-2xl bg-white/10 hover:bg-white/20 px-8 py-4 font-semibold text-white"
+      >
+        Cancel Request
+      </button>
+    </section>
+  )
+}
+
+function MiniInfo({ title, value }) {
+  return (
+    <div className="rounded-2xl border border-white/10 bg-slate-950/60 p-4">
+      <p className="text-slate-400 text-sm">{title}</p>
+      <h3 className="text-white font-bold mt-1">{value}</h3>
+    </div>
+  )
+}
+
+function AIParticipantCard({ ai }) {
+  return (
+    <div className="rounded-xl bg-purple-500/10 border border-purple-400/20 p-3">
+      <p className="font-semibold text-white flex items-center gap-2">
+        <Bot size={16} className="text-purple-300" />
+        {ai.name}
+      </p>
+
+      <p className="text-xs text-purple-200">{ai.role}</p>
+
+      <p className="text-xs mt-2 text-slate-400">
+        {ai.personality || "Balanced"} · Auto-filled AI Seat
+      </p>
+    </div>
   )
 }
 
@@ -1335,7 +1745,12 @@ function DeviceSection({
 function ParticipantCard({ participant }) {
   return (
     <div className="rounded-xl bg-slate-950/70 border border-white/10 p-3">
-      <p className="font-semibold text-white">{participant.name}</p>
+      <p className="font-semibold text-white">
+        {participant.name}{" "}
+        {participant.isHost && (
+          <span className="text-xs text-yellow-300 ml-1">(Host)</span>
+        )}
+      </p>
 
       <p className="text-xs text-slate-400">{participant.role}</p>
 
