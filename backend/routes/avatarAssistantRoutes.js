@@ -1,6 +1,3 @@
-import dotenv from "dotenv"
-dotenv.config()
-
 import express from "express"
 import multer from "multer"
 import Groq from "groq-sdk"
@@ -10,103 +7,116 @@ const router = express.Router()
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: {
-    fileSize: 25 * 1024 * 1024
-  }
+  limits: { fileSize: 25 * 1024 * 1024 }
 })
 
-const GROQ_API_KEY = process.env.GROQ_API_KEY?.trim()
+const getGroq = () => {
+  const apiKey = process.env.GROQ_API_KEY?.trim()
 
-let groq = null
+  if (!apiKey) return null
 
-if (GROQ_API_KEY) {
-  groq = new Groq({
-    apiKey: GROQ_API_KEY
-  })
-} else {
-  console.log("Sifra Error: GROQ_API_KEY missing")
+  return new Groq({ apiKey })
+}
+
+const cleanMessages = (conversation = []) => {
+  if (!Array.isArray(conversation)) return []
+
+  return conversation.slice(-10).map((msg) => ({
+    role: msg.role === "assistant" ? "assistant" : "user",
+    content: String(msg.content || "").slice(0, 3000)
+  }))
 }
 
 router.get("/test", (req, res) => {
   res.json({
     success: true,
     message: "Sifra Assistant Online",
-    groqLoaded: Boolean(GROQ_API_KEY)
+    groqLoaded: Boolean(process.env.GROQ_API_KEY?.trim())
   })
 })
 
 router.post("/chat", async (req, res) => {
   try {
-    const { message, conversation = [], context = {} } = req.body
-
-    if (!message?.trim()) {
-      return res.status(400).json({
-        success: false,
-        reply: "No message received."
-      })
-    }
+    const groq = getGroq()
 
     if (!groq) {
       return res.status(500).json({
         success: false,
-        reply: "Groq API key is missing on backend."
+        reply: "Sifra is offline because GROQ_API_KEY is missing."
       })
     }
 
-    const history = Array.isArray(conversation)
-      ? conversation.slice(-8).map((msg) => ({
-          role: msg.role === "assistant" ? "assistant" : "user",
-          content: String(msg.content || "")
-        }))
-      : []
+    const { message, conversation = [], context = {} } = req.body
 
-    const completion = await groq.chat.completions.create({
-      model: "llama-3.3-70b-versatile",
-      temperature: 0.65,
-      messages: [
-        {
-          role: "system",
-          content: `
-You are Sifra, the intelligent AI assistant of Placiora AI.
+    if (!message || !String(message).trim()) {
+      return res.status(400).json({
+        success: false,
+        reply: "Please type or speak something first."
+      })
+    }
+
+    const userMessage = String(message).trim()
+
+    const systemPrompt = `
+You are Sifra, the advanced AI agent of Placiora AI.
 
 Platform: Placiora AI
 Tagline: Your Personal Placement Copilot
 
-You help with coding, debugging, interviews, resumes, aptitude, placements, project building and website navigation.
-
-Rules:
-- Do not repeatedly introduce yourself.
-- Continue naturally like a modern AI copilot.
-- Be helpful, friendly and professional.
-- For code requests, give copy-paste ready code.
-- For debugging, explain the issue and give corrected code.
+User:
+- Name: ${context.userName || "User"}
+- Email: ${context.userEmail || "unknown"}
 - Current page: ${context.currentPath || "unknown"}
 - Page mode: ${context.pageMode || "default"}
-- User name: ${context.userName || "User"}
+- Agent mode: ${context.agentMode ? "ON" : "OFF"}
+
+Main abilities:
+1. Help with coding, debugging, DSA, Piston errors and deployment.
+2. Help with AI interview, HR, GD, live interview and resume.
+3. Navigate user through Placiora AI pages.
+4. Give copy-paste ready code when asked.
+5. Explain errors clearly and step-by-step.
+6. Never repeat introduction again and again.
+7. Be concise unless user asks for full code.
+8. If user is angry or stuck, calm them and give exact next commands.
+9. If code is requested, provide complete usable file code.
+10. If unsure, ask for the exact file/error screenshot.
+
+Tone:
+Modern AI copilot, friendly, professional, confident.
+
+Important:
+- Do not claim you changed files yourself.
+- Do not expose secrets.
+- Tell user not to commit .env.
+- For Render/Vercel/Git errors, give commands in order.
 `
-        },
-        ...history,
-        {
-          role: "user",
-          content: message
-        }
+
+    const completion = await groq.chat.completions.create({
+      model: "llama-3.3-70b-versatile",
+      temperature: 0.45,
+      max_tokens: 2200,
+      messages: [
+        { role: "system", content: systemPrompt },
+        ...cleanMessages(conversation),
+        { role: "user", content: userMessage }
       ]
     })
 
     const reply =
       completion?.choices?.[0]?.message?.content ||
-      "Sorry, I could not generate a response."
+      "I could not generate a response right now."
 
     res.json({
       success: true,
       reply
     })
   } catch (error) {
-    console.log("Sifra Chat Error:", error)
+    console.log("Sifra Chat Error:", error?.response?.data || error.message)
 
     res.status(500).json({
       success: false,
-      reply: "I am having trouble connecting right now. Please try again.",
+      reply: "Sifra could not connect right now. Please try again.",
       error: error.message
     })
   }
@@ -114,11 +124,13 @@ Rules:
 
 router.post("/transcribe", upload.single("audio"), async (req, res) => {
   try {
+    const groq = getGroq()
+
     if (!groq) {
       return res.status(500).json({
         success: false,
         text: "",
-        message: "Groq API key missing"
+        message: "GROQ_API_KEY is missing."
       })
     }
 
@@ -126,42 +138,44 @@ router.post("/transcribe", upload.single("audio"), async (req, res) => {
       return res.status(400).json({
         success: false,
         text: "",
-        message: "No audio uploaded"
+        message: "No audio file received."
       })
     }
 
-    console.log("Sifra audio received:", {
-      originalname: req.file.originalname,
-      mimetype: req.file.mimetype,
-      size: req.file.size
-    })
+    if (req.file.size < 1000) {
+      return res.status(400).json({
+        success: false,
+        text: "",
+        message: "Audio is too short. Please speak longer."
+      })
+    }
 
-    const audioFile = await toFile(
-      req.file.buffer,
-      req.file.originalname || "voice.webm",
-      {
-        type: req.file.mimetype || "audio/webm"
-      }
-    )
+    const fileName = req.file.originalname || "sifra-voice.webm"
+    const mimeType = req.file.mimetype || "audio/webm"
+
+    const audioFile = await toFile(req.file.buffer, fileName, {
+      type: mimeType
+    })
 
     const transcription = await groq.audio.transcriptions.create({
       file: audioFile,
       model: "whisper-large-v3",
       response_format: "json",
-      language: "en"
+      language: "en",
+      temperature: 0
     })
 
     res.json({
       success: true,
-      text: transcription.text || ""
+      text: transcription?.text || ""
     })
   } catch (error) {
-    console.log("Sifra Whisper Error:", error)
+    console.log("Sifra Whisper Error:", error?.response?.data || error.message)
 
     res.status(500).json({
       success: false,
       text: "",
-      message: "Voice transcription failed",
+      message: "Voice transcription failed.",
       error: error.message
     })
   }
