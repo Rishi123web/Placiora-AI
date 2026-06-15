@@ -1,4 +1,5 @@
 const MAX_LIVE_GD_MEMBERS = 5
+
 const liveGDRooms = new Map()
 
 const makeKey = ({ userId = "", email = "", socketId = "" }) =>
@@ -14,19 +15,38 @@ const getRoom = (roomId) => {
       meetingStatus: "waiting"
     })
   }
+
   return liveGDRooms.get(roomId)
 }
 
+const publicUser = (user) => ({
+  socketId: user.socketId,
+  userId: user.userId,
+  name: user.name,
+  email: user.email,
+  role: user.role,
+  isHost: user.isHost,
+  micReady: user.micReady,
+  cameraReady: user.cameraReady,
+  micOn: user.micOn,
+  cameraOn: user.cameraOn,
+  approved: user.approved,
+  status: user.status,
+  joinedAt: user.joinedAt
+})
+
 const emitRoomState = (io, roomId) => {
   const room = getRoom(roomId)
-  const humanUsers = room.users.filter((u) => u.role !== "AI Participant")
+  const users = room.users.map(publicUser)
+  const humanUsers = users.filter((u) => u.role !== "AI Participant")
 
-  io.to(roomId).emit("live-gd-users-updated", room.users)
+  io.to(roomId).emit("live-gd-users-updated", users)
   io.to(roomId).emit("live-gd-pending-updated", room.pending)
+
   io.to(roomId).emit("live-gd-room-state", {
-    users: room.users,
+    users,
     pending: room.pending,
-    participants: room.users,
+    participants: users,
     pendingParticipants: room.pending,
     hostSocketId: room.hostSocketId,
     hostUserId: room.hostUserId,
@@ -66,8 +86,10 @@ const setupLiveGDSocket = (io) => {
         email,
         role: "Host",
         isHost: true,
-        micReady: false,
-        cameraReady: false,
+        micReady: true,
+        cameraReady: true,
+        micOn: true,
+        cameraOn: true,
         approved: true,
         status: "approved",
         joinedAt: new Date()
@@ -77,6 +99,10 @@ const setupLiveGDSocket = (io) => {
       room.users.unshift(host)
 
       liveGDRooms.set(roomId, room)
+
+      socket.to(roomId).emit("live-gd-user-joined", publicUser(host))
+      socket.emit("live-gd-existing-users", room.users.map(publicUser))
+
       emitRoomState(io, roomId)
     }
 
@@ -108,13 +134,20 @@ const setupLiveGDSocket = (io) => {
 
       if (alreadyAdmitted) {
         socket.join(roomId)
-        socket.emit("live-gd-admitted", { roomId })
-        socket.emit("live-gd-approved", { roomId })
+
+        socket.emit("live-gd-admitted", {
+          roomId,
+          users: room.users.map(publicUser)
+        })
+
+        socket.emit("live-gd-existing-users", room.users.map(publicUser))
+
         emitRoomState(io, roomId)
         return
       }
 
       const humanUsers = room.users.filter((u) => u.role !== "AI Participant")
+
       if (humanUsers.length >= MAX_LIVE_GD_MEMBERS) {
         socket.emit("live-gd-room-full", {
           message: "This GD meeting already has 5 real members."
@@ -136,31 +169,35 @@ const setupLiveGDSocket = (io) => {
 
       room.pending = room.pending.filter((item) => makeKey(item) !== makeKey(request))
       room.pending.push(request)
+
       liveGDRooms.set(roomId, room)
 
       socket.join(`waiting-${roomId}`)
-
-      if (room.hostSocketId) {
-        io.to(room.hostSocketId).emit("live-gd-join-request", request)
-      }
 
       socket.emit("live-gd-waiting-room", {
         roomId,
         message: "Join request sent. Waiting for host approval."
       })
+
       socket.emit("live-gd-waiting-approval", {
         roomId,
         message: "Join request sent. Waiting for host approval."
       })
+
+      if (room.hostSocketId) {
+        io.to(room.hostSocketId).emit("live-gd-join-request", request)
+      }
 
       emitRoomState(io, roomId)
     })
 
     const admitHandler = (payload = {}) => {
       const { roomId, socketId = "", userId = "", email = "" } = payload
+
       if (!roomId) return
 
       const room = getRoom(roomId)
+
       const request = room.pending.find((item) => {
         if (socketId && item.socketId === socketId) return true
         if (userId && item.userId === userId) return true
@@ -171,6 +208,7 @@ const setupLiveGDSocket = (io) => {
       if (!request) return
 
       const humanUsers = room.users.filter((u) => u.role !== "AI Participant")
+
       if (humanUsers.length >= MAX_LIVE_GD_MEMBERS) {
         io.to(request.socketId).emit("live-gd-room-full", {
           message: "This GD meeting already has 5 real members."
@@ -185,8 +223,10 @@ const setupLiveGDSocket = (io) => {
         email: request.email,
         role: "Participant",
         isHost: false,
-        micReady: false,
-        cameraReady: false,
+        micReady: true,
+        cameraReady: true,
+        micOn: true,
+        cameraOn: true,
         approved: true,
         status: "approved",
         joinedAt: new Date()
@@ -196,19 +236,23 @@ const setupLiveGDSocket = (io) => {
       room.users = room.users.filter((u) => makeKey(u) !== makeKey(approvedUser))
       room.users.push(approvedUser)
 
-      const admittedSocket = io.sockets.sockets.get(request.socketId)
-      if (admittedSocket) admittedSocket.join(roomId)
-
       liveGDRooms.set(roomId, room)
+
+      const admittedSocket = io.sockets.sockets.get(request.socketId)
+
+      if (admittedSocket) {
+        admittedSocket.join(roomId)
+      }
 
       io.to(request.socketId).emit("live-gd-admitted", {
         roomId,
-        message: "Host approved your request. Joining meeting..."
+        users: room.users.map(publicUser),
+        message: "Host approved your request."
       })
-      io.to(request.socketId).emit("live-gd-approved", {
-        roomId,
-        message: "Host approved your request. Joining meeting..."
-      })
+
+      io.to(request.socketId).emit("live-gd-existing-users", room.users.map(publicUser))
+
+      socket.to(roomId).emit("live-gd-user-joined", publicUser(approvedUser))
 
       io.to(roomId).emit("live-gd-system-message", {
         speaker: "system",
@@ -226,6 +270,7 @@ const setupLiveGDSocket = (io) => {
 
     socket.on("live-gd-reject-user", (payload = {}) => {
       const { roomId, socketId = "", userId = "", email = "" } = payload
+
       if (!roomId) return
 
       const room = getRoom(roomId)
@@ -268,8 +313,9 @@ const setupLiveGDSocket = (io) => {
         return
       }
 
-      const room = getRoom(roomId)
       socket.join(roomId)
+
+      const room = getRoom(roomId)
 
       const userData = {
         socketId: socket.id,
@@ -278,8 +324,10 @@ const setupLiveGDSocket = (io) => {
         email,
         role,
         isHost: role === "Host",
-        micReady: false,
-        cameraReady: false,
+        micReady: true,
+        cameraReady: true,
+        micOn: true,
+        cameraOn: true,
         approved: true,
         status: "approved",
         joinedAt: new Date()
@@ -289,20 +337,79 @@ const setupLiveGDSocket = (io) => {
       room.users.push(userData)
 
       liveGDRooms.set(roomId, room)
+
+      socket.to(roomId).emit("live-gd-user-joined", publicUser(userData))
+      socket.emit("live-gd-existing-users", room.users.map(publicUser))
+
       emitRoomState(io, roomId)
     })
 
     socket.on("live-gd-device-ready", (payload = {}) => {
-      const { roomId, micReady = false, cameraReady = false } = payload
+      const {
+        roomId,
+        micReady = false,
+        cameraReady = false,
+        micOn = true,
+        cameraOn = true
+      } = payload
+
       if (!roomId || !liveGDRooms.has(roomId)) return
 
       const room = getRoom(roomId)
+
       room.users = room.users.map((user) =>
-        user.socketId === socket.id ? { ...user, micReady, cameraReady } : user
+        user.socketId === socket.id
+          ? {
+              ...user,
+              micReady,
+              cameraReady,
+              micOn,
+              cameraOn
+            }
+          : user
       )
 
       liveGDRooms.set(roomId, room)
+
+      socket.to(roomId).emit("live-gd-device-state", {
+        socketId: socket.id,
+        micReady,
+        cameraReady,
+        micOn,
+        cameraOn
+      })
+
       emitRoomState(io, roomId)
+    })
+
+    socket.on("live-gd-webrtc-offer", ({ to, offer, roomId }) => {
+      if (!to || !offer) return
+
+      io.to(to).emit("live-gd-webrtc-offer", {
+        from: socket.id,
+        offer,
+        roomId
+      })
+    })
+
+    socket.on("live-gd-webrtc-answer", ({ to, answer, roomId }) => {
+      if (!to || !answer) return
+
+      io.to(to).emit("live-gd-webrtc-answer", {
+        from: socket.id,
+        answer,
+        roomId
+      })
+    })
+
+    socket.on("live-gd-webrtc-ice-candidate", ({ to, candidate, roomId }) => {
+      if (!to || !candidate) return
+
+      io.to(to).emit("live-gd-webrtc-ice-candidate", {
+        from: socket.id,
+        candidate,
+        roomId
+      })
     })
 
     socket.on("live-gd-send-message", (payload = {}) => {
@@ -347,24 +454,6 @@ const setupLiveGDSocket = (io) => {
       })
     })
 
-    socket.on("live-gd-ai-messages", (payload = {}) => {
-      const { roomId, replies = [] } = payload
-      if (!roomId || !Array.isArray(replies)) return
-
-      replies.forEach((reply, index) => {
-        setTimeout(() => {
-          io.to(roomId).emit("live-gd-new-message", {
-            speaker: "ai",
-            name: reply.name || "AI Participant",
-            role: reply.role || "AI Participant",
-            personality: reply.personality || "Balanced",
-            message: reply.message || "",
-            createdAt: new Date()
-          })
-        }, index * 1200)
-      })
-    })
-
     socket.on("live-gd-started", (payload = {}) => {
       const { roomId } = payload
       if (!roomId) return
@@ -377,6 +466,7 @@ const setupLiveGDSocket = (io) => {
         message: "The live GD round has started.",
         createdAt: new Date()
       })
+
       emitRoomState(io, roomId)
     })
 
@@ -392,10 +482,13 @@ const setupLiveGDSocket = (io) => {
         message: "The live GD round has ended.",
         createdAt: new Date()
       })
+
       emitRoomState(io, roomId)
     })
 
     socket.on("disconnect", () => {
+      console.log("Live GD socket disconnected:", socket.id)
+
       for (const [roomId, room] of liveGDRooms.entries()) {
         const leavingUser = room.users.find((user) => user.socketId === socket.id)
 
@@ -404,6 +497,7 @@ const setupLiveGDSocket = (io) => {
 
         if (room.hostSocketId === socket.id) {
           const nextHost = room.users[0]
+
           if (nextHost) {
             room.hostSocketId = nextHost.socketId
             room.hostUserId = nextHost.userId
@@ -412,6 +506,7 @@ const setupLiveGDSocket = (io) => {
                 ? { ...user, role: "Host", isHost: true }
                 : user
             )
+
             io.to(nextHost.socketId).emit("live-gd-host-transferred", {
               message: "You are now the meeting host."
             })
@@ -420,6 +515,10 @@ const setupLiveGDSocket = (io) => {
             room.hostUserId = ""
           }
         }
+
+        socket.to(roomId).emit("live-gd-user-left", {
+          socketId: socket.id
+        })
 
         if (room.users.length === 0 && room.pending.length === 0) {
           liveGDRooms.delete(roomId)
