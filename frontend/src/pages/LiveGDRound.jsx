@@ -132,21 +132,16 @@ function LiveGDRound() {
   const handleMouseMove = (e) => {
     const card = e.currentTarget
     const rect = card.getBoundingClientRect()
-
     card.style.setProperty("--x", `${e.clientX - rect.left}px`)
     card.style.setProperty("--y", `${e.clientY - rect.top}px`)
   }
 
   const stopStreams = () => {
-    if (previewStreamRef.current) {
-      previewStreamRef.current.getTracks().forEach((track) => track.stop())
-      previewStreamRef.current = null
-    }
+    previewStreamRef.current?.getTracks().forEach((track) => track.stop())
+    recordingStreamRef.current?.getTracks().forEach((track) => track.stop())
 
-    if (recordingStreamRef.current) {
-      recordingStreamRef.current.getTracks().forEach((track) => track.stop())
-      recordingStreamRef.current = null
-    }
+    previewStreamRef.current = null
+    recordingStreamRef.current = null
 
     if (animationRef.current) {
       cancelAnimationFrame(animationRef.current)
@@ -259,6 +254,8 @@ function LiveGDRound() {
   const loadMeetingFromCode = async (code) => {
     try {
       const cleanCode = String(code || "")
+        .replace("/live-gd-round?invite=", "")
+        .replace("invite=", "")
         .trim()
         .toUpperCase()
 
@@ -266,7 +263,9 @@ function LiveGDRound() {
         throw new Error("Valid meeting code is required")
       }
 
-      const res = await fetch(`${API_URL}/meeting/${encodeURIComponent(cleanCode)}`)
+      const res = await fetch(
+        `${API_URL}/meeting/${encodeURIComponent(cleanCode)}`
+      )
       const data = await res.json()
 
       if (!res.ok || !data.success) {
@@ -284,36 +283,38 @@ function LiveGDRound() {
   const registerSocketListeners = () => {
     if (!socketRef.current) return
 
-    socketRef.current.off("live-gd-users-updated")
-    socketRef.current.off("live-gd-new-message")
-    socketRef.current.off("live-gd-system-message")
-    socketRef.current.off("live-gd-ended")
-    socketRef.current.off("live-gd-started")
-    socketRef.current.off("live-gd-room-full")
-    socketRef.current.off("live-gd-room-state")
-    socketRef.current.off("live-gd-pending-updated")
-    socketRef.current.off("live-gd-join-request")
-    socketRef.current.off("live-gd-waiting-room")
-    socketRef.current.off("live-gd-admitted")
-    socketRef.current.off("live-gd-rejected")
-    socketRef.current.off("live-gd-host-transferred")
-    socketRef.current.off("live-gd-error")
+    const socket = socketRef.current
 
-    socketRef.current.on("live-gd-users-updated", (users) => {
+    socket.off("live-gd-users-updated")
+    socket.off("live-gd-new-message")
+    socket.off("live-gd-system-message")
+    socket.off("live-gd-ended")
+    socket.off("live-gd-started")
+    socket.off("live-gd-room-full")
+    socket.off("live-gd-room-state")
+    socket.off("live-gd-pending-updated")
+    socket.off("live-gd-join-request")
+    socket.off("live-gd-waiting-room")
+    socket.off("live-gd-admitted")
+    socket.off("live-gd-rejected")
+    socket.off("live-gd-host-transferred")
+    socket.off("live-gd-error")
+
+    socket.on("live-gd-users-updated", (users) => {
       setParticipants(Array.isArray(users) ? users : [])
     })
 
-    socketRef.current.on("live-gd-room-state", (state) => {
+    socket.on("live-gd-room-state", (state) => {
       setRoomState(state)
       setParticipants(Array.isArray(state?.users) ? state.users : [])
       setPendingParticipants(Array.isArray(state?.pending) ? state.pending : [])
     })
 
-    socketRef.current.on("live-gd-pending-updated", (pending) => {
+    socket.on("live-gd-pending-updated", (pending) => {
       setPendingParticipants(Array.isArray(pending) ? pending : [])
     })
 
-    socketRef.current.on("live-gd-join-request", (request) => {
+    socket.on("live-gd-join-request", (request) => {
       setPendingParticipants((prev) => {
         const exists = prev.some(
           (item) =>
@@ -326,17 +327,32 @@ function LiveGDRound() {
       speakText(`${request.name || "A participant"} is waiting to join.`, "Moderator")
     })
 
-    socketRef.current.on("live-gd-waiting-room", () => {
+    socket.on("live-gd-waiting-room", () => {
       setWaitingApproval(true)
       setRoomReady(false)
       setStarted(false)
     })
 
-    socketRef.current.on("live-gd-admitted", () => {
+    socket.on("live-gd-admitted", async () => {
       setWaitingApproval(false)
       setRejected(false)
       setRoomReady(true)
-      setStarted(true)
+
+      if (roundId) {
+        try {
+          const res = await fetch(`${API_URL}/room/${roundId}`)
+          const data = await res.json()
+
+          if (data.success && data.round) {
+            applyRoundData(data.round)
+            setStarted(data.round.meetingStatus === "live")
+          }
+        } catch {
+          setStarted(false)
+        }
+      } else {
+        setStarted(false)
+      }
 
       setTimeout(() => {
         attachStreamToVideo()
@@ -344,7 +360,7 @@ function LiveGDRound() {
       }, 500)
     })
 
-    socketRef.current.on("live-gd-rejected", (payload) => {
+    socket.on("live-gd-rejected", (payload) => {
       setRejected(true)
       setWaitingApproval(false)
       setRoomReady(false)
@@ -352,12 +368,12 @@ function LiveGDRound() {
       setError(payload?.message || "Host rejected your request.")
     })
 
-    socketRef.current.on("live-gd-host-transferred", (payload) => {
+    socket.on("live-gd-host-transferred", (payload) => {
       setIsHost(true)
       speakText(payload?.message || "You are now the meeting host.", "Moderator")
     })
 
-    socketRef.current.on("live-gd-new-message", (messageData) => {
+    socket.on("live-gd-new-message", (messageData) => {
       setMessages((prev) => {
         const exists = prev.some(
           (item) =>
@@ -377,7 +393,7 @@ function LiveGDRound() {
       }
     })
 
-    socketRef.current.on("live-gd-system-message", (messageData) => {
+    socket.on("live-gd-system-message", (messageData) => {
       setMessages((prev) => [
         ...prev,
         {
@@ -389,21 +405,21 @@ function LiveGDRound() {
       ])
     })
 
-    socketRef.current.on("live-gd-started", () => {
+    socket.on("live-gd-started", () => {
       setStarted(true)
       setTimeout(attachStreamToVideo, 300)
       speakText("The live group discussion has started.", "Moderator")
     })
 
-    socketRef.current.on("live-gd-ended", () => {
+    socket.on("live-gd-ended", () => {
       setStarted(false)
     })
 
-    socketRef.current.on("live-gd-room-full", (payload) => {
+    socket.on("live-gd-room-full", (payload) => {
       setError(payload?.message || "This GD room is full.")
     })
 
-    socketRef.current.on("live-gd-error", (payload) => {
+    socket.on("live-gd-error", (payload) => {
       setError(payload?.message || "Live GD socket error.")
     })
   }
@@ -531,12 +547,10 @@ function LiveGDRound() {
           dataArray.reduce((sum, value) => sum + value, 0) / dataArray.length
 
         setMicLevel(Math.min(100, Math.round(average * 2)))
-
         animationRef.current = requestAnimationFrame(updateMicLevel)
       }
 
       updateMicLevel()
-
       setTimeout(() => emitDeviceReady(), 300)
     } catch {
       setDeviceReady(false)
@@ -553,7 +567,7 @@ function LiveGDRound() {
       const params = new URLSearchParams(window.location.search)
       const code = params.get("invite")
 
-      if (code && code !== "undefined") {
+      if (code && code !== "undefined" && code !== "null") {
         const cleanCode = code.trim().toUpperCase()
         setInviteInput(cleanCode)
         setMeetingCode(cleanCode)
@@ -577,9 +591,7 @@ function LiveGDRound() {
   }, [roomReady, started])
 
   useEffect(() => {
-    if (!isHost || !roundId || !roomReady) {
-      return
-    }
+    if (!isHost || !roundId || !roomReady) return
 
     const interval = setInterval(async () => {
       try {
@@ -596,10 +608,43 @@ function LiveGDRound() {
       }
     }, 2500)
 
-    return () => {
-      clearInterval(interval)
-    }
+    return () => clearInterval(interval)
   }, [isHost, roundId, roomReady])
+
+  useEffect(() => {
+    if (!waitingApproval || !roundId || isHost) return
+
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`${API_URL}/room/${roundId}`)
+        const data = await res.json()
+
+        if (data.success && data.round) {
+          const approved = (data.round.participants || []).some((p) => {
+            if (userId && p.userId) return String(p.userId) === String(userId)
+            return userEmail && p.email === userEmail
+          })
+
+          if (approved) {
+            applyRoundData(data.round)
+            setWaitingApproval(false)
+            setRejected(false)
+            setRoomReady(true)
+            setStarted(data.round.meetingStatus === "live")
+
+            setTimeout(() => {
+              attachStreamToVideo()
+              emitDeviceReady(data.round._id)
+            }, 400)
+          }
+        }
+      } catch (err) {
+        console.log("Waiting approval sync failed:", err)
+      }
+    }, 2000)
+
+    return () => clearInterval(interval)
+  }, [waitingApproval, roundId, isHost, userId, userEmail])
 
   const speakOpeningMessages = (items = []) => {
     items
@@ -641,6 +686,7 @@ function LiveGDRound() {
       })
 
       const data = await res.json()
+      console.log("CREATE ROOM RESPONSE:", data)
 
       if (!res.ok || !data.success) {
         throw new Error(data.message || "Room creation failed")
@@ -653,7 +699,8 @@ function LiveGDRound() {
         data.meetingCode ||
         data.inviteCode ||
         room.meetingCode ||
-        room.inviteCode
+        room.inviteCode ||
+        ""
 
       if (!newRoundId || !code) {
         console.log("BAD CREATE ROOM RESPONSE:", data)
@@ -689,8 +736,6 @@ function LiveGDRound() {
           micReady: true,
           cameraReady: true
         })
-
-        // Host will start GD manually after admitting users.
       }, 500)
 
       speakOpeningMessages(finalRoom.messages || [])
@@ -721,8 +766,14 @@ function LiveGDRound() {
         .trim()
         .toUpperCase()
 
-      if (!cleanCode || cleanCode === "UNDEFINED") {
+      if (!cleanCode || cleanCode === "UNDEFINED" || cleanCode === "NULL") {
         throw new Error("Valid meeting code is required")
+      }
+
+      const meeting = await loadMeetingFromCode(cleanCode)
+
+      if (!meeting?._id) {
+        throw new Error("GD meeting not found")
       }
 
       const res = await fetch(`${API_URL}/join-room`, {
@@ -744,7 +795,7 @@ function LiveGDRound() {
         throw new Error(data.message || "Failed to join GD meeting")
       }
 
-      const room = data.round
+      const room = data.round || meeting
 
       if (!room?._id) {
         throw new Error("Meeting found but room ID missing")
@@ -768,7 +819,7 @@ function LiveGDRound() {
 
       setWaitingApproval(false)
       setRoomReady(true)
-      setStarted(true)
+      setStarted(room.meetingStatus === "live")
 
       setTimeout(() => {
         attachStreamToVideo()
@@ -814,7 +865,9 @@ function LiveGDRound() {
 
       socketRef.current?.emit("live-gd-admit-user", {
         roomId: roundId,
-        socketId: participant.socketId
+        socketId: participant.socketId || "",
+        userId: participant.userId || "",
+        email: participant.email || ""
       })
     } catch (err) {
       setError(err.message)
@@ -849,7 +902,9 @@ function LiveGDRound() {
 
       socketRef.current?.emit("live-gd-reject-user", {
         roomId: roundId,
-        socketId: participant.socketId
+        socketId: participant.socketId || "",
+        userId: participant.userId || "",
+        email: participant.email || ""
       })
     } catch (err) {
       setError(err.message)
@@ -953,13 +1008,8 @@ function LiveGDRound() {
           setError(err.message)
         } finally {
           setTranscribing(false)
-
-          if (recordingStreamRef.current) {
-            recordingStreamRef.current
-              .getTracks()
-              .forEach((track) => track.stop())
-            recordingStreamRef.current = null
-          }
+          recordingStreamRef.current?.getTracks().forEach((track) => track.stop())
+          recordingStreamRef.current = null
         }
       }
 
@@ -1141,7 +1191,6 @@ function LiveGDRound() {
   const resetGD = () => {
     window.speechSynthesis?.cancel()
     stopStreams()
-
     socketRef.current?.disconnect()
     socketRef.current = null
 
