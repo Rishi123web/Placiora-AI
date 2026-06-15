@@ -1325,7 +1325,7 @@ function LiveGDRound() {
           </>
         )}
 
-        {roomReady && started && (
+        {roomReady && (
           <>
             <MeetingInfoPanel
               isHost={isHost}
@@ -1358,7 +1358,7 @@ function LiveGDRound() {
                     Camera & Members
                   </h2>
 
-                  {isHost && (
+                  {isHost && started && (
                     <button
                       type="button"
                       onClick={finishGD}
