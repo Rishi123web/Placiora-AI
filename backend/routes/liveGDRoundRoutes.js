@@ -61,26 +61,10 @@ const companyOptions = [
 ]
 
 const AI_PARTICIPANTS = [
-  {
-    name: "Priya",
-    role: "AI Participant",
-    personality: "Analytical"
-  },
-  {
-    name: "Rahul",
-    role: "AI Participant",
-    personality: "Technical"
-  },
-  {
-    name: "Aarav",
-    role: "AI Participant",
-    personality: "Leader"
-  },
-  {
-    name: "Neha",
-    role: "AI Participant",
-    personality: "Critical Thinker"
-  }
+  { name: "Priya", role: "AI Participant", personality: "Analytical" },
+  { name: "Rahul", role: "AI Participant", personality: "Technical" },
+  { name: "Aarav", role: "AI Participant", personality: "Leader" },
+  { name: "Neha", role: "AI Participant", personality: "Critical Thinker" }
 ]
 
 const generateMeetingCode = () => {
@@ -115,7 +99,7 @@ const getUniqueMeetingCode = async () => {
   for (let i = 0; i < 10; i++) {
     const code = generateMeetingCode()
 
-    const exists = await LiveGDRound.exists({
+    const exists = await LiveGDRound.collection.findOne({
       $or: [{ meetingCode: code }, { inviteCode: code }]
     })
 
@@ -156,6 +140,47 @@ const clampScore = (value) => {
   return Math.min(100, Math.max(0, Math.round(num)))
 }
 
+const fallbackEvaluation = (messages = []) => {
+  const text = messages
+    .filter((item) => item.speaker === "user")
+    .map((item) => item.message || "")
+    .join(" ")
+
+  const words = text.split(/\s+/).filter(Boolean).length
+  let score = 45
+
+  if (words > 20) score += 10
+  if (words > 50) score += 10
+  if (words > 90) score += 10
+  if (text.toLowerCase().includes("example")) score += 8
+  if (text.toLowerCase().includes("solution")) score += 7
+
+  const finalScore = clampScore(score)
+
+  return {
+    communicationScore: finalScore,
+    contentScore: clampScore(finalScore + 3),
+    leadershipScore: clampScore(finalScore - 2),
+    confidenceScore: finalScore,
+    criticalThinkingScore: clampScore(finalScore - 1),
+    teamworkScore: clampScore(finalScore + 2),
+    argumentStrengthScore: finalScore,
+    overallScore: finalScore,
+    recruiterVerdict:
+      finalScore >= 80
+        ? "Likely Selected"
+        : finalScore >= 65
+        ? "Borderline Select"
+        : "Needs Improvement",
+    feedback:
+      "Good attempt. Speak in a structured way, acknowledge others, add examples, and conclude with a balanced view.",
+    strengths: ["Participated in the discussion", "Shared viewpoint"],
+    weaknesses: ["Needs stronger structure", "Needs more examples"],
+    improvedResponse:
+      "I agree with the previous point, and I would like to add a balanced perspective. This topic has both opportunities and risks. For example, technology can improve productivity, but people also need reskilling. So, the best solution is responsible adoption with proper training."
+  }
+}
+
 const openingMessages = (topic, humanCount = 1) => {
   const activeAi = getActiveAiParticipants(humanCount)
 
@@ -193,48 +218,6 @@ const openingMessages = (topic, humanCount = 1) => {
   return messages
 }
 
-const fallbackEvaluation = (messages = []) => {
-  const text = messages
-    .filter((item) => item.speaker === "user")
-    .map((item) => item.message || "")
-    .join(" ")
-
-  const words = text.split(/\s+/).filter(Boolean).length
-
-  let score = 45
-
-  if (words > 20) score += 10
-  if (words > 50) score += 10
-  if (words > 90) score += 10
-  if (text.toLowerCase().includes("example")) score += 8
-  if (text.toLowerCase().includes("solution")) score += 7
-
-  const finalScore = clampScore(score)
-
-  return {
-    communicationScore: finalScore,
-    contentScore: clampScore(finalScore + 3),
-    leadershipScore: clampScore(finalScore - 2),
-    confidenceScore: finalScore,
-    criticalThinkingScore: clampScore(finalScore - 1),
-    teamworkScore: clampScore(finalScore + 2),
-    argumentStrengthScore: finalScore,
-    overallScore: finalScore,
-    recruiterVerdict:
-      finalScore >= 80
-        ? "Likely Selected"
-        : finalScore >= 65
-        ? "Borderline Select"
-        : "Needs Improvement",
-    feedback:
-      "Good attempt. Speak in a structured way, acknowledge others, add examples, and conclude with a balanced view.",
-    strengths: ["Participated in the discussion", "Shared viewpoint"],
-    weaknesses: ["Needs stronger structure", "Needs more examples"],
-    improvedResponse:
-      "I agree with the previous point, and I would like to add a balanced perspective. This topic has both opportunities and risks. For example, technology can improve productivity, but people also need reskilling. So, the best solution is responsible adoption with proper training."
-  }
-}
-
 router.get("/test", (req, res) => {
   res.json({
     success: true,
@@ -264,9 +247,6 @@ router.post("/create-room", async (req, res) => {
     const inviteCode = meetingCode
     const inviteLink = `${FRONTEND_URL}/live-gd-round?invite=${meetingCode}`
 
-    console.log("LIVE GD CODE GENERATED:", meetingCode)
-    console.log("LIVE GD LINK GENERATED:", inviteLink)
-
     const hostObjectId =
       userId && mongoose.Types.ObjectId.isValid(userId)
         ? new mongoose.Types.ObjectId(userId)
@@ -289,8 +269,9 @@ router.post("/create-room", async (req, res) => {
 
     const aiParticipants = getActiveAiParticipants(participants.length)
     const messages = openingMessages(topic, participants.length)
+    const now = new Date()
 
-    const round = await LiveGDRound.create({
+    const roomDoc = {
       userId: hostObjectId,
       hostId: hostObjectId,
       hostName: name,
@@ -316,31 +297,46 @@ router.post("/create-room", async (req, res) => {
       messages,
       transcript: createTranscript(messages),
 
+      communicationScore: 0,
+      contentScore: 0,
+      leadershipScore: 0,
+      confidenceScore: 0,
+      overallScore: 0,
+
+      feedback: "",
+      strengths: [],
+      weaknesses: [],
+      improvedResponse: "",
+
       completed: false,
       startedAt: null,
-      endedAt: null
-    })
+      endedAt: null,
 
-    console.log("LIVE GD ROOM SAVED:", {
-      id: round._id.toString(),
-      meetingCode: round.meetingCode,
-      inviteCode: round.inviteCode,
-      inviteLink: round.inviteLink
+      createdAt: now,
+      updatedAt: now
+    }
+
+    const inserted = await LiveGDRound.collection.insertOne(roomDoc)
+
+    const round = {
+      ...roomDoc,
+      _id: inserted.insertedId.toString()
+    }
+
+    console.log("LIVE GD ROOM SAVED RAW:", {
+      id: inserted.insertedId.toString(),
+      meetingCode,
+      inviteCode,
+      inviteLink
     })
 
     res.status(201).json({
       success: true,
-      roundId: round._id.toString(),
-      meetingCode: round.meetingCode,
-      inviteCode: round.inviteCode,
-      inviteLink: round.inviteLink,
-      round: {
-        ...round.toObject(),
-        _id: round._id.toString(),
-        meetingCode: round.meetingCode,
-        inviteCode: round.inviteCode,
-        inviteLink: round.inviteLink
-      }
+      roundId: inserted.insertedId.toString(),
+      meetingCode,
+      inviteCode,
+      inviteLink,
+      round
     })
   } catch (error) {
     console.log("Create Live GD room error:", error)
@@ -364,7 +360,7 @@ router.get("/meeting/:meetingCode", async (req, res) => {
       })
     }
 
-    const round = await LiveGDRound.findOne({
+    const round = await LiveGDRound.collection.findOne({
       $or: [{ meetingCode: cleanCode }, { inviteCode: cleanCode }]
     })
 
@@ -377,7 +373,10 @@ router.get("/meeting/:meetingCode", async (req, res) => {
 
     res.json({
       success: true,
-      round
+      round: {
+        ...round,
+        _id: round._id.toString()
+      }
     })
   } catch (error) {
     res.status(500).json({
@@ -402,7 +401,7 @@ router.post("/join-room", async (req, res) => {
       })
     }
 
-    const round = await LiveGDRound.findOne({
+    const round = await LiveGDRound.collection.findOne({
       $or: [{ meetingCode: cleanCode }, { inviteCode: cleanCode }],
       completed: false,
       meetingStatus: { $ne: "ended" }
@@ -415,7 +414,7 @@ router.post("/join-room", async (req, res) => {
       })
     }
 
-    const alreadyParticipant = round.participants.some((p) => {
+    const alreadyParticipant = (round.participants || []).some((p) => {
       if (userId && p.userId) return p.userId.toString() === userId
       return email && p.email === email
     })
@@ -425,28 +424,31 @@ router.post("/join-room", async (req, res) => {
         success: true,
         admitted: true,
         waiting: false,
-        round
+        round: {
+          ...round,
+          _id: round._id.toString()
+        }
       })
     }
 
-    const humanParticipants = round.participants.filter(
+    const humanParticipants = (round.participants || []).filter(
       (p) => p.role !== "AI Participant"
     ).length
 
-    if (humanParticipants >= round.maxParticipants) {
+    if (humanParticipants >= (round.maxParticipants || 5)) {
       return res.status(400).json({
         success: false,
         message: "GD meeting is full"
       })
     }
 
-    const alreadyPending = round.pendingParticipants.some((p) => {
+    const alreadyPending = (round.pendingParticipants || []).some((p) => {
       if (userId && p.userId) return p.userId.toString() === userId
       return email && p.email === email
     })
 
     if (!alreadyPending) {
-      round.pendingParticipants.push({
+      const pendingUser = {
         userId:
           userId && mongoose.Types.ObjectId.isValid(userId)
             ? new mongoose.Types.ObjectId(userId)
@@ -457,9 +459,20 @@ router.post("/join-room", async (req, res) => {
         approved: false,
         status: "pending",
         requestedAt: new Date()
-      })
+      }
 
-      await round.save()
+      await LiveGDRound.collection.updateOne(
+        { _id: round._id },
+        {
+          $push: { pendingParticipants: pendingUser },
+          $set: { updatedAt: new Date() }
+        }
+      )
+
+      round.pendingParticipants = [
+        ...(round.pendingParticipants || []),
+        pendingUser
+      ]
     }
 
     res.json({
@@ -467,7 +480,10 @@ router.post("/join-room", async (req, res) => {
       admitted: false,
       waiting: true,
       message: "Join request sent. Waiting for host approval.",
-      round
+      round: {
+        ...round,
+        _id: round._id.toString()
+      }
     })
   } catch (error) {
     res.status(500).json({
@@ -489,7 +505,9 @@ router.get("/room/:roundId", async (req, res) => {
       })
     }
 
-    const round = await LiveGDRound.findById(roundId)
+    const round = await LiveGDRound.collection.findOne({
+      _id: new mongoose.Types.ObjectId(roundId)
+    })
 
     if (!round) {
       return res.status(404).json({
@@ -500,7 +518,10 @@ router.get("/room/:roundId", async (req, res) => {
 
     res.json({
       success: true,
-      round
+      round: {
+        ...round,
+        _id: round._id.toString()
+      }
     })
   } catch (error) {
     res.status(500).json({
@@ -522,7 +543,11 @@ router.post("/admit-user", async (req, res) => {
       })
     }
 
-    const round = await LiveGDRound.findById(roundId)
+    const objectId = new mongoose.Types.ObjectId(roundId)
+
+    const round = await LiveGDRound.collection.findOne({
+      _id: objectId
+    })
 
     if (!round) {
       return res.status(404).json({
@@ -531,18 +556,18 @@ router.post("/admit-user", async (req, res) => {
       })
     }
 
-    const humanParticipants = round.participants.filter(
+    const humanParticipants = (round.participants || []).filter(
       (p) => p.role !== "AI Participant"
     ).length
 
-    if (humanParticipants >= round.maxParticipants) {
+    if (humanParticipants >= (round.maxParticipants || 5)) {
       return res.status(400).json({
         success: false,
         message: "Room already has 5 human members"
       })
     }
 
-    const pending = round.pendingParticipants.find((p) => {
+    const pending = (round.pendingParticipants || []).find((p) => {
       if (userId && p.userId) return p.userId.toString() === userId
       return email && p.email === email
     })
@@ -554,12 +579,7 @@ router.post("/admit-user", async (req, res) => {
       })
     }
 
-    round.pendingParticipants = round.pendingParticipants.filter((p) => {
-      if (userId && p.userId) return p.userId.toString() !== userId
-      return p.email !== email
-    })
-
-    round.participants.push({
+    const participant = {
       userId: pending.userId || null,
       name: pending.name,
       email: pending.email,
@@ -570,15 +590,40 @@ router.post("/admit-user", async (req, res) => {
       micReady: false,
       cameraReady: false,
       joinedAt: new Date()
+    }
+
+    const updatedParticipants = [...(round.participants || []), participant]
+    const updatedAiParticipants = getActiveAiParticipants(
+      updatedParticipants.length
+    )
+
+    const updatedPending = (round.pendingParticipants || []).filter((p) => {
+      if (userId && p.userId) return p.userId.toString() !== userId
+      return p.email !== email
     })
 
-    round.aiParticipants = getActiveAiParticipants(round.participants.length)
+    await LiveGDRound.collection.updateOne(
+      { _id: objectId },
+      {
+        $set: {
+          participants: updatedParticipants,
+          pendingParticipants: updatedPending,
+          aiParticipants: updatedAiParticipants,
+          updatedAt: new Date()
+        }
+      }
+    )
 
-    await round.save()
+    const updatedRound = await LiveGDRound.collection.findOne({
+      _id: objectId
+    })
 
     res.json({
       success: true,
-      round
+      round: {
+        ...updatedRound,
+        _id: updatedRound._id.toString()
+      }
     })
   } catch (error) {
     res.status(500).json({
@@ -600,7 +645,11 @@ router.post("/reject-user", async (req, res) => {
       })
     }
 
-    const round = await LiveGDRound.findById(roundId)
+    const objectId = new mongoose.Types.ObjectId(roundId)
+
+    const round = await LiveGDRound.collection.findOne({
+      _id: objectId
+    })
 
     if (!round) {
       return res.status(404).json({
@@ -609,16 +658,31 @@ router.post("/reject-user", async (req, res) => {
       })
     }
 
-    round.pendingParticipants = round.pendingParticipants.filter((p) => {
+    const updatedPending = (round.pendingParticipants || []).filter((p) => {
       if (userId && p.userId) return p.userId.toString() !== userId
       return p.email !== email
     })
 
-    await round.save()
+    await LiveGDRound.collection.updateOne(
+      { _id: objectId },
+      {
+        $set: {
+          pendingParticipants: updatedPending,
+          updatedAt: new Date()
+        }
+      }
+    )
+
+    const updatedRound = await LiveGDRound.collection.findOne({
+      _id: objectId
+    })
 
     res.json({
       success: true,
-      round
+      round: {
+        ...updatedRound,
+        _id: updatedRound._id.toString()
+      }
     })
   } catch (error) {
     res.status(500).json({
@@ -640,7 +704,23 @@ router.post("/start-room", async (req, res) => {
       })
     }
 
-    const round = await LiveGDRound.findById(roundId)
+    const objectId = new mongoose.Types.ObjectId(roundId)
+
+    await LiveGDRound.collection.updateOne(
+      { _id: objectId },
+      {
+        $set: {
+          meetingStatus: "live",
+          status: "active",
+          startedAt: new Date(),
+          updatedAt: new Date()
+        }
+      }
+    )
+
+    const round = await LiveGDRound.collection.findOne({
+      _id: objectId
+    })
 
     if (!round) {
       return res.status(404).json({
@@ -649,15 +729,12 @@ router.post("/start-room", async (req, res) => {
       })
     }
 
-    round.meetingStatus = "live"
-    round.status = "active"
-    round.startedAt = round.startedAt || new Date()
-
-    await round.save()
-
     res.json({
       success: true,
-      round
+      round: {
+        ...round,
+        _id: round._id.toString()
+      }
     })
   } catch (error) {
     res.status(500).json({
@@ -720,8 +797,13 @@ router.post("/transcribe", upload.single("audio"), async (req, res) => {
 
 router.post("/speak", async (req, res) => {
   try {
-    const { roundId, message, name = "You", role = "Candidate", userId = "" } =
-      req.body || {}
+    const {
+      roundId,
+      message,
+      name = "You",
+      role = "Candidate",
+      userId = ""
+    } = req.body || {}
 
     if (!roundId || !mongoose.Types.ObjectId.isValid(roundId)) {
       return res.status(400).json({
@@ -737,7 +819,11 @@ router.post("/speak", async (req, res) => {
       })
     }
 
-    const round = await LiveGDRound.findById(roundId)
+    const objectId = new mongoose.Types.ObjectId(roundId)
+
+    const round = await LiveGDRound.collection.findOne({
+      _id: objectId
+    })
 
     if (!round) {
       return res.status(404).json({
@@ -746,36 +832,46 @@ router.post("/speak", async (req, res) => {
       })
     }
 
-    const activeAi =
-      round.aiParticipants?.filter((item) => item.active) ||
-      getActiveAiParticipants(round.participants.length)
-
     const userMessage = {
       speaker: "user",
       userId,
       name,
       role,
-      message: message.trim()
+      message: message.trim(),
+      createdAt: new Date(),
+      updatedAt: new Date()
     }
 
-    round.messages.push(userMessage)
+    const activeAi =
+      (round.aiParticipants || []).filter((item) => item.active) ||
+      getActiveAiParticipants((round.participants || []).length)
 
     const aiReplies = activeAi.slice(0, 3).map((ai) => ({
       speaker: "ai",
       name: ai.name,
       role: ai.role,
       personality: ai.personality,
-      message: `That's a valid point. For ${round.topic}, we should keep the discussion balanced with examples and solutions.`
+      message: `That's a valid point. For ${round.topic}, we should keep the discussion balanced with examples and solutions.`,
+      createdAt: new Date(),
+      updatedAt: new Date()
     }))
 
-    round.messages.push(...aiReplies)
-    round.transcript = createTranscript(round.messages)
+    const updatedMessages = [...(round.messages || []), userMessage, ...aiReplies]
 
-    await round.save()
+    await LiveGDRound.collection.updateOne(
+      { _id: objectId },
+      {
+        $set: {
+          messages: updatedMessages,
+          transcript: createTranscript(updatedMessages),
+          updatedAt: new Date()
+        }
+      }
+    )
 
     res.json({
       success: true,
-      messages: round.messages,
+      messages: updatedMessages,
       userMessage,
       aiReplies,
       userEvaluation: {
@@ -787,7 +883,7 @@ router.post("/speak", async (req, res) => {
         feedback:
           "Good participation. Try to add examples and respond to other speakers directly."
       },
-      aiParticipants: round.aiParticipants
+      aiParticipants: round.aiParticipants || []
     })
   } catch (error) {
     res.status(500).json({
@@ -809,7 +905,11 @@ router.post("/finish", async (req, res) => {
       })
     }
 
-    const round = await LiveGDRound.findById(roundId)
+    const objectId = new mongoose.Types.ObjectId(roundId)
+
+    const round = await LiveGDRound.collection.findOne({
+      _id: objectId
+    })
 
     if (!round) {
       return res.status(404).json({
@@ -818,29 +918,40 @@ router.post("/finish", async (req, res) => {
       })
     }
 
-    const result = fallbackEvaluation(round.messages)
+    const result = fallbackEvaluation(round.messages || [])
 
-    round.communicationScore = result.communicationScore
-    round.contentScore = result.contentScore
-    round.leadershipScore = result.leadershipScore
-    round.confidenceScore = result.confidenceScore
-    round.overallScore = result.overallScore
-    round.feedback = result.feedback
-    round.strengths = result.strengths
-    round.weaknesses = result.weaknesses
-    round.improvedResponse = result.improvedResponse
-    round.transcript = createTranscript(round.messages)
-    round.completed = true
-    round.status = "completed"
-    round.meetingStatus = "ended"
-    round.endedAt = new Date()
+    await LiveGDRound.collection.updateOne(
+      { _id: objectId },
+      {
+        $set: {
+          communicationScore: result.communicationScore,
+          contentScore: result.contentScore,
+          leadershipScore: result.leadershipScore,
+          confidenceScore: result.confidenceScore,
+          overallScore: result.overallScore,
+          feedback: result.feedback,
+          strengths: result.strengths,
+          weaknesses: result.weaknesses,
+          improvedResponse: result.improvedResponse,
+          transcript: createTranscript(round.messages || []),
+          completed: true,
+          status: "completed",
+          meetingStatus: "ended",
+          endedAt: new Date(),
+          updatedAt: new Date()
+        }
+      }
+    )
 
-    await round.save()
+    const updatedRound = await LiveGDRound.collection.findOne({
+      _id: objectId
+    })
 
     res.json({
       success: true,
       round: {
-        ...round.toObject(),
+        ...updatedRound,
+        _id: updatedRound._id.toString(),
         criticalThinkingScore: result.criticalThinkingScore,
         teamworkScore: result.teamworkScore,
         argumentStrengthScore: result.argumentStrengthScore,
@@ -869,15 +980,19 @@ router.get("/history/:userId", async (req, res) => {
 
     const objectId = new mongoose.Types.ObjectId(userId)
 
-    const rounds = await LiveGDRound.find({
-      $or: [{ userId: objectId }, { "participants.userId": objectId }]
-    })
+    const rounds = await LiveGDRound.collection
+      .find({
+        $or: [{ userId: objectId }, { "participants.userId": objectId }]
+      })
       .sort({ createdAt: -1 })
-      .lean()
+      .toArray()
 
     res.json({
       success: true,
-      rounds
+      rounds: rounds.map((round) => ({
+        ...round,
+        _id: round._id.toString()
+      }))
     })
   } catch {
     res.json({
