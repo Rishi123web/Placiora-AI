@@ -416,7 +416,8 @@ router.post("/create-room", async (req, res) => {
       inviteCode,
       meetingCode,
       inviteLink,
-      meetingStatus: "live",
+      meetingStatus: "waiting",
+      status: "waiting",
       requiresApproval: true,
       isMultiplayer: true,
       maxParticipants: 5,
@@ -425,7 +426,7 @@ router.post("/create-room", async (req, res) => {
       aiParticipants,
       messages,
       transcript: createTranscript(messages),
-      startedAt: new Date(),
+      startedAt: null,
       completed: false
     })
 
@@ -459,43 +460,40 @@ router.post("/join-room", async (req, res) => {
     const { inviteCode, userId, name = "Participant", email = "" } =
       req.body || {}
 
-    if (!inviteCode) {
+    const cleanCode = String(inviteCode || "")
+      .trim()
+      .toUpperCase()
+
+    if (!cleanCode || cleanCode === "UNDEFINED") {
       return res.status(400).json({
         success: false,
-        message: "Meeting code is required"
+        message: "Valid meeting code is required"
       })
     }
 
-    const cleanCode = inviteCode.trim().toUpperCase()
-
     const round = await LiveGDRound.findOne({
-      $or: [{ inviteCode: cleanCode }, { meetingCode: cleanCode }]
+      $or: [
+        { inviteCode: cleanCode },
+        { meetingCode: cleanCode }
+      ],
+      completed: false,
+      meetingStatus: { $ne: "ended" }
     })
 
     if (!round) {
       return res.status(404).json({
         success: false,
-        message: "GD meeting not found"
+        message: `GD meeting not found for code: ${cleanCode}`
       })
     }
 
-    if (round.completed || round.meetingStatus === "ended") {
-      return res.status(400).json({
-        success: false,
-        message: "This GD meeting is already completed"
-      })
-    }
-
-    const alreadyParticipant = round.participants.some((participant) => {
-      if (userId && participant.userId) {
-        return participant.userId.toString() === userId
-      }
-
-      return participant.email && participant.email === email
+    const alreadyParticipant = round.participants.some((p) => {
+      if (userId && p.userId) return p.userId.toString() === userId
+      return email && p.email === email
     })
 
     if (alreadyParticipant) {
-      return res.status(200).json({
+      return res.json({
         success: true,
         admitted: true,
         waiting: false,
@@ -503,19 +501,20 @@ router.post("/join-room", async (req, res) => {
       })
     }
 
-    if (round.participants.length >= round.maxParticipants) {
+    const humanParticipants = round.participants.filter(
+      (participant) => participant.role !== "AI Participant"
+    ).length
+
+    if (humanParticipants >= 5) {
       return res.status(400).json({
         success: false,
-        message: "GD meeting is full. Maximum 5 human members can join."
+        message: "GD meeting is full"
       })
     }
 
-    const alreadyPending = round.pendingParticipants.some((participant) => {
-      if (userId && participant.userId) {
-        return participant.userId.toString() === userId
-      }
-
-      return participant.email && participant.email === email
+    const alreadyPending = round.pendingParticipants.some((p) => {
+      if (userId && p.userId) return p.userId.toString() === userId
+      return email && p.email === email
     })
 
     if (!alreadyPending) {
@@ -532,7 +531,7 @@ router.post("/join-room", async (req, res) => {
       await round.save()
     }
 
-    res.status(200).json({
+    res.json({
       success: true,
       admitted: false,
       waiting: true,
@@ -540,8 +539,6 @@ router.post("/join-room", async (req, res) => {
       round
     })
   } catch (error) {
-    console.log("Join Live GD room error:", error)
-
     res.status(500).json({
       success: false,
       message: "Join room failed",
@@ -549,6 +546,75 @@ router.post("/join-room", async (req, res) => {
     })
   }
 })
+
+
+router.get("/meeting/:meetingCode", async (req, res) => {
+  try {
+    const cleanCode = String(req.params.meetingCode || "").trim().toUpperCase()
+
+    if (!cleanCode || cleanCode === "UNDEFINED" || cleanCode === "NULL") {
+      return res.status(400).json({
+        success: false,
+        message: "Valid meeting code is required"
+      })
+    }
+
+    const round = await LiveGDRound.findOne({
+      $or: [{ inviteCode: cleanCode }, { meetingCode: cleanCode }]
+    })
+
+    if (!round) {
+      return res.status(404).json({
+        success: false,
+        message: `GD meeting not found for code: ${cleanCode}`
+      })
+    }
+
+    res.json({ success: true, round })
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch meeting",
+      error: error.message
+    })
+  }
+})
+
+router.post("/start-room", async (req, res) => {
+  try {
+    const { roundId } = req.body || {}
+
+    if (!roundId || !mongoose.Types.ObjectId.isValid(roundId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Valid room ID required"
+      })
+    }
+
+    const round = await LiveGDRound.findById(roundId)
+
+    if (!round) {
+      return res.status(404).json({
+        success: false,
+        message: "Room not found"
+      })
+    }
+
+    round.meetingStatus = "live"
+    round.status = "active"
+    round.startedAt = round.startedAt || new Date()
+    await round.save()
+
+    res.json({ success: true, round })
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Start room failed",
+      error: error.message
+    })
+  }
+})
+
 
 router.get("/room/:roundId", async (req, res) => {
   try {
@@ -603,7 +669,11 @@ router.post("/admit-user", async (req, res) => {
       })
     }
 
-    if (round.participants.length >= round.maxParticipants) {
+    const humanParticipants = round.participants.filter(
+      (participant) => participant.role !== "AI Participant"
+    ).length
+
+    if (humanParticipants >= round.maxParticipants) {
       return res.status(400).json({
         success: false,
         message: "Room already has 5 human members"
@@ -1035,6 +1105,7 @@ Rules:
     round.improvedResponse = result.improvedResponse
     round.transcript = createTranscript(round.messages)
     round.completed = true
+    round.status = "completed"
     round.meetingStatus = "ended"
     round.endedAt = new Date()
 

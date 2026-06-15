@@ -253,7 +253,32 @@ function LiveGDRound() {
     setParticipants(round.participants || [])
     setPendingParticipants(round.pendingParticipants || [])
     setAiParticipants(round.aiParticipants || [])
-    setStarted(round.meetingStatus !== "ended")
+    setStarted(round.meetingStatus === "live")
+  }
+
+  const loadMeetingFromCode = async (code) => {
+    try {
+      const cleanCode = String(code || "")
+        .trim()
+        .toUpperCase()
+
+      if (!cleanCode || cleanCode === "UNDEFINED" || cleanCode === "NULL") {
+        throw new Error("Valid meeting code is required")
+      }
+
+      const res = await fetch(`${API_URL}/meeting/${cleanCode}`)
+      const data = await res.json()
+
+      if (!res.ok || !data.success) {
+        throw new Error(data.message || "GD meeting not found")
+      }
+
+      applyRoundData(data.round)
+      return data.round
+    } catch (error) {
+      setError(error.message)
+      return null
+    }
   }
 
   const registerSocketListeners = () => {
@@ -534,6 +559,7 @@ function LiveGDRound() {
         setMeetingCode(cleanCode)
         setInviteCode(cleanCode)
         setHasInviteFromUrl(true)
+        await loadMeetingFromCode(cleanCode)
       }
     }
 
@@ -650,7 +676,7 @@ function LiveGDRound() {
       applyRoundData(finalRoom)
 
       setRoomReady(true)
-      setStarted(true)
+      setStarted(false)
       setIsHost(true)
 
       connectSocket(newRoundId, true)
@@ -664,9 +690,7 @@ function LiveGDRound() {
           cameraReady: true
         })
 
-        socketRef.current?.emit("live-gd-started", {
-          roomId: newRoundId
-        })
+        // Host will start GD manually after admitting users.
       }, 500)
 
       speakOpeningMessages(finalRoom.messages || [])
@@ -1030,6 +1054,46 @@ function LiveGDRound() {
     }
   }
 
+  const startMeeting = async () => {
+    if (!roundId) {
+      setError("Room ID missing.")
+      return
+    }
+
+    try {
+      setLoading(true)
+      setError("")
+
+      const res = await fetch(`${API_URL}/start-room`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ roundId })
+      })
+
+      const data = await res.json()
+
+      if (!res.ok || !data.success) {
+        throw new Error(data.message || "Failed to start GD")
+      }
+
+      applyRoundData(data.round)
+      setRoomReady(true)
+      setStarted(true)
+
+      socketRef.current?.emit("live-gd-started", {
+        roomId: roundId
+      })
+
+      speakText("The live group discussion has started.", "Moderator")
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
   const finishGD = async () => {
     if (!roundId) {
       setError("Round ID missing.")
@@ -1277,6 +1341,8 @@ function LiveGDRound() {
               copyMeetingCode={copyMeetingCode}
               admitParticipant={admitParticipant}
               rejectParticipant={rejectParticipant}
+              startMeeting={startMeeting}
+              loading={loading}
               onMouseMove={handleMouseMove}
             />
 
@@ -1456,6 +1522,8 @@ function MeetingInfoPanel({
   copyMeetingCode,
   admitParticipant,
   rejectParticipant,
+  startMeeting,
+  loading,
   onMouseMove
 }) {
   return (
@@ -1512,6 +1580,18 @@ function MeetingInfoPanel({
               <Clipboard size={18} />
               Copy Meeting Code
             </button>
+
+            {isHost && (
+              <button
+                type="button"
+                onClick={startMeeting}
+                disabled={loading}
+                className="rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-700 px-5 py-3 font-semibold flex items-center gap-2 text-white disabled:opacity-50"
+              >
+                <Sparkles size={18} />
+                Start GD
+              </button>
+            )}
           </div>
 
           {inviteLink && (
