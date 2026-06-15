@@ -22,7 +22,9 @@ const storage = multer.diskStorage({
 
 const upload = multer({
   storage,
-  limits: { fileSize: 25 * 1024 * 1024 }
+  limits: {
+    fileSize: 25 * 1024 * 1024
+  }
 })
 
 const FRONTEND_URL =
@@ -59,10 +61,26 @@ const companyOptions = [
 ]
 
 const AI_PARTICIPANTS = [
-  { name: "Priya", role: "AI Participant", personality: "Analytical" },
-  { name: "Rahul", role: "AI Participant", personality: "Technical" },
-  { name: "Aarav", role: "AI Participant", personality: "Leader" },
-  { name: "Neha", role: "AI Participant", personality: "Critical Thinker" }
+  {
+    name: "Priya",
+    role: "AI Participant",
+    personality: "Analytical"
+  },
+  {
+    name: "Rahul",
+    role: "AI Participant",
+    personality: "Technical"
+  },
+  {
+    name: "Aarav",
+    role: "AI Participant",
+    personality: "Leader"
+  },
+  {
+    name: "Neha",
+    role: "AI Participant",
+    personality: "Critical Thinker"
+  }
 ]
 
 const generateMeetingCode = () => {
@@ -98,7 +116,7 @@ const getUniqueMeetingCode = async () => {
     const code = generateMeetingCode()
 
     const exists = await LiveGDRound.exists({
-      $or: [{ inviteCode: code }, { meetingCode: code }]
+      $or: [{ meetingCode: code }, { inviteCode: code }]
     })
 
     if (!exists) return code
@@ -131,6 +149,11 @@ const createTranscript = (messages = []) => {
   return messages
     .map((item) => `${item.name || "Speaker"}: ${item.message || ""}`)
     .join("\n")
+}
+
+const clampScore = (value) => {
+  const num = Number(value) || 0
+  return Math.min(100, Math.max(0, Math.round(num)))
 }
 
 const openingMessages = (topic, humanCount = 1) => {
@@ -170,11 +193,6 @@ const openingMessages = (topic, humanCount = 1) => {
   return messages
 }
 
-const clampScore = (value) => {
-  const num = Number(value) || 0
-  return Math.min(100, Math.max(0, Math.round(num)))
-}
-
 const fallbackEvaluation = (messages = []) => {
   const text = messages
     .filter((item) => item.speaker === "user")
@@ -182,6 +200,7 @@ const fallbackEvaluation = (messages = []) => {
     .join(" ")
 
   const words = text.split(/\s+/).filter(Boolean).length
+
   let score = 45
 
   if (words > 20) score += 10
@@ -346,7 +365,7 @@ router.get("/meeting/:meetingCode", async (req, res) => {
     }
 
     const round = await LiveGDRound.findOne({
-      $or: [{ inviteCode: cleanCode }, { meetingCode: cleanCode }]
+      $or: [{ meetingCode: cleanCode }, { inviteCode: cleanCode }]
     })
 
     if (!round) {
@@ -384,7 +403,7 @@ router.post("/join-room", async (req, res) => {
     }
 
     const round = await LiveGDRound.findOne({
-      $or: [{ inviteCode: cleanCode }, { meetingCode: cleanCode }],
+      $or: [{ meetingCode: cleanCode }, { inviteCode: cleanCode }],
       completed: false,
       meetingStatus: { $ne: "ended" }
     })
