@@ -108,6 +108,23 @@ const generateMeetingCode = () => {
   return code
 }
 
+const normalizeMeetingCode = (input = "") => {
+  let value = String(input || "").trim()
+
+  try {
+    if (value.startsWith("http")) {
+      const url = new URL(value)
+      value = url.searchParams.get("invite") || ""
+    }
+  } catch {}
+
+  return value
+    .replace("/live-gd-round?invite=", "")
+    .replace("invite=", "")
+    .trim()
+    .toUpperCase()
+}
+
 const getUniqueMeetingCode = async () => {
   for (let i = 0; i < 8; i++) {
     const code = generateMeetingCode()
@@ -460,9 +477,7 @@ router.post("/join-room", async (req, res) => {
     const { inviteCode, userId, name = "Participant", email = "" } =
       req.body || {}
 
-    const cleanCode = String(inviteCode || "")
-      .trim()
-      .toUpperCase()
+    const cleanCode = normalizeMeetingCode(inviteCode)
 
     if (!cleanCode || cleanCode === "UNDEFINED") {
       return res.status(400).json({
@@ -550,7 +565,7 @@ router.post("/join-room", async (req, res) => {
 
 router.get("/meeting/:meetingCode", async (req, res) => {
   try {
-    const cleanCode = String(req.params.meetingCode || "").trim().toUpperCase()
+    const cleanCode = normalizeMeetingCode(req.params.meetingCode)
 
     if (!cleanCode || cleanCode === "UNDEFINED" || cleanCode === "NULL") {
       return res.status(400).json({
@@ -570,7 +585,10 @@ router.get("/meeting/:meetingCode", async (req, res) => {
       })
     }
 
-    res.json({ success: true, round })
+    res.json({
+      success: true,
+      round
+    })
   } catch (error) {
     res.status(500).json({
       success: false,

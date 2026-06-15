@@ -266,7 +266,7 @@ function LiveGDRound() {
         throw new Error("Valid meeting code is required")
       }
 
-      const res = await fetch(`${API_URL}/meeting/${cleanCode}`)
+      const res = await fetch(`${API_URL}/meeting/${encodeURIComponent(cleanCode)}`)
       const data = await res.json()
 
       if (!res.ok || !data.success) {
@@ -716,6 +716,8 @@ function LiveGDRound() {
 
       const urlCode = new URLSearchParams(window.location.search).get("invite")
       const cleanCode = String(inviteInput || urlCode || "")
+        .replace("/live-gd-round?invite=", "")
+        .replace("invite=", "")
         .trim()
         .toUpperCase()
 
