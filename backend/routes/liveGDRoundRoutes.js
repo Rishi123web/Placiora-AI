@@ -22,22 +22,13 @@ const storage = multer.diskStorage({
 
 const upload = multer({
   storage,
-  limits: {
-    fileSize: 25 * 1024 * 1024
-  }
+  limits: { fileSize: 25 * 1024 * 1024 }
 })
 
 const FRONTEND_URL =
   process.env.CLIENT_URL ||
   process.env.FRONTEND_URL ||
   "http://localhost:5173"
-
-const AI_PARTICIPANTS = [
-  { name: "Priya", role: "AI Participant", personality: "Analytical" },
-  { name: "Rahul", role: "AI Participant", personality: "Technical" },
-  { name: "Aarav", role: "AI Participant", personality: "Leader" },
-  { name: "Neha", role: "AI Participant", personality: "Critical Thinker" }
-]
 
 const companyOptions = [
   "General",
@@ -56,6 +47,7 @@ const companyOptions = [
   "TCS",
   "Wipro",
   "Cognizant",
+  "HCL",
   "Flipkart",
   "Swiggy",
   "Zomato",
@@ -64,6 +56,13 @@ const companyOptions = [
   "Meesho",
   "Zoho",
   "Freshworks"
+]
+
+const AI_PARTICIPANTS = [
+  { name: "Priya", role: "AI Participant", personality: "Analytical" },
+  { name: "Rahul", role: "AI Participant", personality: "Technical" },
+  { name: "Aarav", role: "AI Participant", personality: "Leader" },
+  { name: "Neha", role: "AI Participant", personality: "Critical Thinker" }
 ]
 
 const generateMeetingCode = () => {
@@ -134,27 +133,6 @@ const createTranscript = (messages = []) => {
     .join("\n")
 }
 
-const clampScore = (value) => {
-  const num = Number(value) || 0
-  return Math.min(100, Math.max(0, Math.round(num)))
-}
-
-const extractJSON = (text = "") => {
-  try {
-    return JSON.parse(text)
-  } catch {
-    const match = text.match(/\{[\s\S]*\}/)
-
-    if (!match) return null
-
-    try {
-      return JSON.parse(match[0])
-    } catch {
-      return null
-    }
-  }
-}
-
 const openingMessages = (topic, humanCount = 1) => {
   const activeAi = getActiveAiParticipants(humanCount)
 
@@ -183,7 +161,7 @@ const openingMessages = (topic, humanCount = 1) => {
     messages.push({
       speaker: "ai",
       name: ai.name,
-      role: "AI Participant",
+      role: ai.role,
       personality: ai.personality,
       message: introMap[ai.name] || "I am ready to contribute."
     })
@@ -192,37 +170,25 @@ const openingMessages = (topic, humanCount = 1) => {
   return messages
 }
 
-const fallbackAiReplies = (topic, activeAi = []) => {
-  const list = activeAi.length ? activeAi.slice(0, 3) : [
-    { name: "Moderator", role: "Moderator", personality: "Moderator" }
-  ]
-
-  return list.map((ai) => ({
-    speaker: "ai",
-    name: ai.name,
-    role: ai.role || "AI Participant",
-    personality: ai.personality || "Balanced",
-    message:
-      ai.name === "Moderator"
-        ? "Please support your point with one example and respond to another participant's view."
-        : `That's a valid point. For ${topic}, we should keep the discussion balanced with examples and solutions.`
-  }))
+const clampScore = (value) => {
+  const num = Number(value) || 0
+  return Math.min(100, Math.max(0, Math.round(num)))
 }
 
 const fallbackEvaluation = (messages = []) => {
-  const userText = messages
+  const text = messages
     .filter((item) => item.speaker === "user")
     .map((item) => item.message || "")
     .join(" ")
 
-  const words = userText.split(/\s+/).filter(Boolean).length
-
+  const words = text.split(/\s+/).filter(Boolean).length
   let score = 45
+
   if (words > 20) score += 10
   if (words > 50) score += 10
   if (words > 90) score += 10
-  if (userText.toLowerCase().includes("example")) score += 8
-  if (userText.toLowerCase().includes("solution")) score += 7
+  if (text.toLowerCase().includes("example")) score += 8
+  if (text.toLowerCase().includes("solution")) score += 7
 
   const finalScore = clampScore(score)
 
@@ -264,56 +230,6 @@ router.get("/companies", (req, res) => {
   })
 })
 
-router.post("/transcribe", upload.single("audio"), async (req, res) => {
-  let filePath = ""
-
-  try {
-    const groq = getGroqClient()
-
-    if (!groq) {
-      return res.status(500).json({
-        success: false,
-        message: "Groq API key missing"
-      })
-    }
-
-    if (!req.file) {
-      return res.status(400).json({
-        success: false,
-        message: "Audio file is required"
-      })
-    }
-
-    filePath = path.resolve(req.file.path)
-
-    const transcription = await groq.audio.transcriptions.create({
-      file: fs.createReadStream(filePath),
-      model: "whisper-large-v3",
-      language: "en",
-      response_format: "json"
-    })
-
-    if (fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath)
-    }
-
-    res.json({
-      success: true,
-      text: transcription.text || ""
-    })
-  } catch (error) {
-    if (filePath && fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath)
-    }
-
-    res.status(500).json({
-      success: false,
-      message: "Transcription failed",
-      error: error.message
-    })
-  }
-})
-
 router.post("/create-room", async (req, res) => {
   try {
     const {
@@ -347,7 +263,8 @@ router.post("/create-room", async (req, res) => {
         micReady: false,
         cameraReady: false,
         approved: true,
-        status: "approved"
+        status: "approved",
+        joinedAt: new Date()
       }
     ]
 
@@ -367,11 +284,11 @@ router.post("/create-room", async (req, res) => {
       inviteCode,
       inviteLink,
 
-      status: "waiting",
-      meetingStatus: "waiting",
-      requiresApproval: true,
       isMultiplayer: true,
       maxParticipants: 5,
+
+      status: "waiting",
+      meetingStatus: "waiting",
 
       participants,
       pendingParticipants: [],
@@ -380,8 +297,9 @@ router.post("/create-room", async (req, res) => {
       messages,
       transcript: createTranscript(messages),
 
+      completed: false,
       startedAt: null,
-      completed: false
+      endedAt: null
     })
 
     console.log("LIVE GD ROOM SAVED:", {
@@ -631,7 +549,8 @@ router.post("/admit-user", async (req, res) => {
       approved: true,
       status: "approved",
       micReady: false,
-      cameraReady: false
+      cameraReady: false,
+      joinedAt: new Date()
     })
 
     round.aiParticipants = getActiveAiParticipants(round.participants.length)
@@ -730,15 +649,60 @@ router.post("/start-room", async (req, res) => {
   }
 })
 
+router.post("/transcribe", upload.single("audio"), async (req, res) => {
+  let filePath = ""
+
+  try {
+    const groq = getGroqClient()
+
+    if (!groq) {
+      return res.status(500).json({
+        success: false,
+        message: "Groq API key missing"
+      })
+    }
+
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: "Audio file is required"
+      })
+    }
+
+    filePath = path.resolve(req.file.path)
+
+    const transcription = await groq.audio.transcriptions.create({
+      file: fs.createReadStream(filePath),
+      model: "whisper-large-v3",
+      language: "en",
+      response_format: "json"
+    })
+
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath)
+    }
+
+    res.json({
+      success: true,
+      text: transcription.text || ""
+    })
+  } catch (error) {
+    if (filePath && fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath)
+    }
+
+    res.status(500).json({
+      success: false,
+      message: "Transcription failed",
+      error: error.message
+    })
+  }
+})
+
 router.post("/speak", async (req, res) => {
   try {
-    const {
-      roundId,
-      message,
-      name = "You",
-      role = "Candidate",
-      userId = null
-    } = req.body || {}
+    const { roundId, message, name = "You", role = "Candidate", userId = "" } =
+      req.body || {}
 
     if (!roundId || !mongoose.Types.ObjectId.isValid(roundId)) {
       return res.status(400).json({
@@ -763,13 +727,6 @@ router.post("/speak", async (req, res) => {
       })
     }
 
-    if (round.completed || round.meetingStatus === "ended") {
-      return res.status(400).json({
-        success: false,
-        message: "This GD round is already completed"
-      })
-    }
-
     const activeAi =
       round.aiParticipants?.filter((item) => item.active) ||
       getActiveAiParticipants(round.participants.length)
@@ -784,98 +741,13 @@ router.post("/speak", async (req, res) => {
 
     round.messages.push(userMessage)
 
-    const groq = getGroqClient()
-    let aiReplies = fallbackAiReplies(round.topic, activeAi)
-    let userEvaluation = {
-      communicationScore: 65,
-      contentScore: 65,
-      leadershipScore: 60,
-      confidenceScore: 65,
-      relevanceScore: 65,
-      feedback:
-        "Good participation. Try to add examples and respond to other speakers directly."
-    }
-
-    if (groq) {
-      try {
-        const prompt = `
-You are running a realistic campus placement group discussion.
-
-Topic: ${round.topic}
-Difficulty: ${round.difficulty}
-Company: ${round.company}
-
-Conversation so far:
-${createTranscript(round.messages)}
-
-Candidate ${name} said:
-${message}
-
-Return ONLY valid JSON:
-{
-  "aiReplies": [
-    {
-      "speaker": "ai",
-      "name": "Priya",
-      "role": "AI Participant",
-      "personality": "Analytical",
-      "message": ""
-    }
-  ],
-  "userEvaluation": {
-    "communicationScore": 0,
-    "contentScore": 0,
-    "leadershipScore": 0,
-    "confidenceScore": 0,
-    "relevanceScore": 0,
-    "feedback": ""
-  }
-}
-`
-
-        const response = await Promise.race([
-          groq.chat.completions.create({
-            model: "llama-3.1-8b-instant",
-            messages: [{ role: "user", content: prompt }],
-            temperature: 0.55
-          }),
-          new Promise((_, reject) =>
-            setTimeout(() => reject(new Error("GD AI timeout")), 18000)
-          )
-        ])
-
-        const parsed = extractJSON(response.choices?.[0]?.message?.content)
-
-        if (Array.isArray(parsed?.aiReplies)) {
-          aiReplies = parsed.aiReplies
-            .filter((reply) => reply?.message)
-            .slice(0, 3)
-            .map((reply) => ({
-              speaker: "ai",
-              name: reply.name || "Priya",
-              role: reply.role || "AI Participant",
-              personality: reply.personality || "Balanced",
-              message: reply.message
-            }))
-        }
-
-        if (parsed?.userEvaluation) {
-          userEvaluation = {
-            communicationScore: clampScore(
-              parsed.userEvaluation.communicationScore
-            ),
-            contentScore: clampScore(parsed.userEvaluation.contentScore),
-            leadershipScore: clampScore(parsed.userEvaluation.leadershipScore),
-            confidenceScore: clampScore(parsed.userEvaluation.confidenceScore),
-            relevanceScore: clampScore(parsed.userEvaluation.relevanceScore),
-            feedback:
-              parsed.userEvaluation.feedback || userEvaluation.feedback
-          }
-        }
-      } catch (error) {
-        console.log("Live GD AI fallback:", error.message)
-      }
-    }
+    const aiReplies = activeAi.slice(0, 3).map((ai) => ({
+      speaker: "ai",
+      name: ai.name,
+      role: ai.role,
+      personality: ai.personality,
+      message: `That's a valid point. For ${round.topic}, we should keep the discussion balanced with examples and solutions.`
+    }))
 
     round.messages.push(...aiReplies)
     round.transcript = createTranscript(round.messages)
@@ -887,7 +759,15 @@ Return ONLY valid JSON:
       messages: round.messages,
       userMessage,
       aiReplies,
-      userEvaluation,
+      userEvaluation: {
+        communicationScore: 65,
+        contentScore: 65,
+        leadershipScore: 60,
+        confidenceScore: 65,
+        relevanceScore: 65,
+        feedback:
+          "Good participation. Try to add examples and respond to other speakers directly."
+      },
       aiParticipants: round.aiParticipants
     })
   } catch (error) {
