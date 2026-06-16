@@ -16,7 +16,10 @@ import {
   Layers,
   Cpu,
   Timer,
-  Lightbulb
+  Lightbulb,
+  BookOpen,
+  Target,
+  ClipboardCheck
 } from "lucide-react"
 
 import API_BASE from "../config/api"
@@ -131,6 +134,7 @@ function CodingRound() {
   const handleMouseMove = (e) => {
     const card = e.currentTarget
     const rect = card.getBoundingClientRect()
+
     card.style.setProperty("--x", `${e.clientX - rect.left}px`)
     card.style.setProperty("--y", `${e.clientY - rect.top}px`)
   }
@@ -146,15 +150,36 @@ function CodingRound() {
   }
 
   const getRunError = (data) => {
-  if (data.status?.id === 3 || data.status?.description === "Accepted") {
-    return ""
-  }
+    if (data.status?.id === 3 || data.status?.description === "Accepted") {
+      return ""
+    }
 
-  return data.stderr || data.compile_output || data.message || ""
-}
+    return data.stderr || data.compile_output || data.message || ""
+  }
 
   const isAccepted = (data) => {
     return data.status?.id === 3 || data.status?.description === "Accepted"
+  }
+
+  const detectInputIssue = (inputValue = "") => {
+    if (!problem) return ""
+
+    const sampleInput = String(problem.testCases?.[0]?.input || "")
+    const custom = String(inputValue || "").trim()
+
+    if (!custom) {
+      return "Custom input is empty. Enter input first or click Submit to run official test cases."
+    }
+
+    if (sampleInput.startsWith("[") && !custom.startsWith("[")) {
+      return "Input may be in wrong format. This problem expects array-style input like [1,2,3]."
+    }
+
+    if (sampleInput.includes("|") && !custom.includes("|")) {
+      return "Input may be incomplete. This problem expects multiple parts separated by |."
+    }
+
+    return ""
   }
 
   const runOneTest = async ({ input = "", expectedOutput = "" }) => {
@@ -183,7 +208,7 @@ function CodingRound() {
 
   const runCodeAndReturnResults = async () => {
     const tests =
-      problem?.testCases?.length
+      problem?.testCases?.length > 0
         ? problem.testCases
         : [
             {
@@ -229,6 +254,18 @@ function CodingRound() {
       return
     }
 
+    if (!stdin.trim()) {
+      setError(
+        "Enter custom input first, or click Submit to run official test cases."
+      )
+      setHints([
+        "Run is for custom input only.",
+        "Submit checks the official visible test cases.",
+        "Use the sample input format shown in the problem."
+      ])
+      return
+    }
+
     try {
       setRunning(true)
       setError("")
@@ -238,97 +275,75 @@ function CodingRound() {
       setTestResults([])
       setCustomRunResult(null)
 
-      if (stdin.trim()) {
-        const response = await axios.post(`${API}/run`, {
-          code,
-          language,
-          stdin,
-          input: stdin
-        })
+      const response = await axios.post(`${API}/run`, {
+        code,
+        language,
+        stdin,
+        input: stdin
+      })
 
-        const data = response.data
-        const actualOutput = getRunOutput(data)
-        const runtimeError = getRunError(data)
+      const data = response.data
+      const actualOutput = getRunOutput(data)
+      const runtimeError = getRunError(data)
+      const inputIssue = detectInputIssue(stdin)
+      const hasError = Boolean(runtimeError)
 
-        const customResult = {
-          input: stdin,
-          actualOutput: actualOutput || runtimeError || "",
-          runtimeError,
-          status: data.status?.description || "Executed"
-        }
-
-        setCustomRunResult(customResult)
-
-        setOutput(
-          `Custom Run Output
-Input:
-${stdin}
-
-Output:
-${
-            normalizeOutput(customResult.actualOutput) || "No Output"
-          }${runtimeError ? `
-
-Error:
-${runtimeError}` : ""}`
-        )
-
-        if (Array.isArray(data.hints) && data.hints.length > 0) {
-          setHints(data.hints)
-        }
-
-        return
+      const customResult = {
+        input: stdin,
+        actualOutput: actualOutput || "",
+        runtimeError,
+        inputIssue,
+        passed: !hasError,
+        status: hasError ? "Failed" : "Custom Run Passed"
       }
 
-      const { allResults, collectedHints } = await runCodeAndReturnResults()
+      setCustomRunResult(customResult)
 
-      const combinedOutput = allResults
-  .map((item) => {
-    const status = item.passed ? "Passed" : "Failed"
-    const actual = normalizeOutput(item.actualOutput) || "No Output"
-    const errorLine = item.runtimeError
-      ? "\nError: " + item.runtimeError
-      : ""
+      setOutput(
+        "Custom Input:\n" +
+          stdin +
+          "\n\nYour Output:\n" +
+          (normalizeOutput(actualOutput) || "No Output") +
+          (inputIssue ? "\n\nInput Format Warning:\n" + inputIssue : "") +
+          (runtimeError ? "\n\nError:\n" + runtimeError : "")
+      )
 
-    return (
-      "Test Case " +
-      item.index +
-      ": " +
-      status +
-      "\nInput: " +
-      item.input +
-      "\nExpected: " +
-      item.expectedOutput +
-      "\nOutput: " +
-      actual +
-      errorLine
-    )
-  })
-  .join("\n\n")
-      setOutput(combinedOutput || "No Output")
-      setTestResults(allResults)
-
-      const failed = allResults.some((item) => !item.passed)
-
-      if (failed) {
+      if (hasError) {
         setHints(
-          collectedHints.length
-            ? collectedHints
+          data.hints?.length
+            ? data.hints
             : [
-                "Read input from stdin instead of hardcoding sample values.",
-                "Run your code against every test case, not only the first one."
+                "Check syntax, brackets, indentation and input parsing.",
+                "Make sure your code reads input from stdin.",
+                "Print only the final answer.",
+                "Match the expected input format exactly."
               ]
         )
+      } else if (inputIssue) {
+        setHints([
+          inputIssue,
+          "Compare your custom input with the sample test case format.",
+          "Your code executed, but the custom input format may not match the problem."
+        ])
+      } else {
+        setHints([
+          "Custom input executed successfully.",
+          "Your custom run is not judged against official expected output.",
+          "Click Submit to verify official visible test cases."
+        ])
       }
     } catch (err) {
       const message =
-        err.response?.data?.message ||
-        err.message ||
-        "Code execution failed."
+        err.response?.data?.message || err.message || "Custom run failed."
 
       const receivedHints = Array.isArray(err.response?.data?.hints)
         ? err.response.data.hints
-        : ["Check if backend, Piston, ngrok and PISTON_URL are working."]
+        : [
+            "Check if backend, Piston, ngrok and PISTON_URL are working.",
+            "Verify all brackets and parentheses are closed.",
+            "Ensure input is read from stdin.",
+            "Print only the final answer."
+          ]
 
       setError(message)
       setOutput(message)
@@ -352,15 +367,58 @@ ${runtimeError}` : ""}`
     try {
       setSubmitting(true)
       setError("")
+      setCustomRunResult(null)
 
-      let finalTestResults = testResults
+      const runData = await runCodeAndReturnResults()
+      const finalTestResults = runData.allResults
 
-      if (!finalTestResults.length || customRunResult) {
-        const runData = await runCodeAndReturnResults()
-        finalTestResults = runData.allResults
-        setTestResults(finalTestResults)
-        setCustomRunResult(null)
+      setTestResults(finalTestResults)
+
+      const failed = finalTestResults.some((item) => !item.passed)
+
+      if (failed) {
+        setHints(
+          runData.collectedHints.length
+            ? runData.collectedHints
+            : [
+                "Read input from stdin instead of hardcoding sample values.",
+                "Run your code against every official test case.",
+                "Match expected output exactly.",
+                "Check edge cases and formatting."
+              ]
+        )
+      } else {
+        setHints([
+          "All official visible test cases passed.",
+          "You can now review the AI feedback below."
+        ])
       }
+
+      const combinedOutput = finalTestResults
+        .map((item) => {
+          const status = item.passed ? "Passed" : "Failed"
+          const actual = normalizeOutput(item.actualOutput) || "No Output"
+          const errorLine = item.runtimeError
+            ? "\nError: " + item.runtimeError
+            : ""
+
+          return (
+            "Test Case " +
+            item.index +
+            ": " +
+            status +
+            "\nInput: " +
+            item.input +
+            "\nExpected: " +
+            item.expectedOutput +
+            "\nYour Output: " +
+            actual +
+            errorLine
+          )
+        })
+        .join("\n\n")
+
+      setOutput(combinedOutput || "No Output")
 
       const user = JSON.parse(localStorage.getItem("user") || "{}")
       const userId = user?._id || user?.id || ""
@@ -417,8 +475,9 @@ ${runtimeError}` : ""}`
                 </h1>
 
                 <p className="text-slate-400 mt-3 leading-7 max-w-4xl">
-                  Practice coding questions with a polished editor, real test
-                  cases, Piston execution, AI review and smart correction hints.
+                  Practice coding questions with a polished editor, custom
+                  input execution, official test cases, Piston execution, AI
+                  review and smart correction hints.
                 </p>
               </div>
             </div>
@@ -532,12 +591,76 @@ ${runtimeError}` : ""}`
                 {problem.description || "Solve the coding problem."}
               </p>
 
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+                <div className="rounded-2xl border border-blue-400/20 bg-blue-500/10 p-5">
+                  <h3 className="text-blue-300 font-bold mb-2 flex items-center gap-2">
+                    <BookOpen size={18} />
+                    Problem Understanding
+                  </h3>
+
+                  <p className="text-slate-300 leading-7">
+                    Read the input carefully, apply the correct{" "}
+                    {problem?.category || "programming"} concept and print only
+                    the final answer. Avoid debug output and extra text.
+                  </p>
+                </div>
+
+                <div className="rounded-2xl border border-purple-400/20 bg-purple-500/10 p-5">
+                  <h3 className="text-purple-300 font-bold mb-2 flex items-center gap-2">
+                    <Target size={18} />
+                    Practice Focus
+                  </h3>
+
+                  <p className="text-slate-300 leading-7">
+                    Focus on correctness, edge cases, clean stdin parsing,
+                    output formatting and interview-ready explanation.
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+                <InfoMini
+                  title="Input Format"
+                  value={
+                    problem.inputFormat ||
+                    "Input is provided through standard input."
+                  }
+                />
+
+                <InfoMini
+                  title="Constraints"
+                  value={
+                    problem.constraints ||
+                    "Use an efficient solution and handle edge cases."
+                  }
+                />
+              </div>
+
+              {problem.companies?.length > 0 && (
+                <div className="mb-6">
+                  <p className="text-slate-400 text-sm mb-2">
+                    Commonly Asked In
+                  </p>
+
+                  <div className="flex flex-wrap gap-2">
+                    {problem.companies.map((company) => (
+                      <span
+                        key={company}
+                        className="px-3 py-1.5 rounded-xl bg-white/[0.04] border border-white/10 text-slate-300 text-sm"
+                      >
+                        {company}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <h3 className="text-xl font-bold text-white mb-4">Test Cases</h3>
 
               <div className="space-y-3">
                 {(problem.testCases || []).map((testCase, index) => (
                   <div
-                    key={index}
+                    key={`${testCase.input}-${index}`}
                     className="rounded-[1.5rem] border border-white/10 bg-slate-950/70 p-5 hover:border-cyan-400/20 transition-all"
                   >
                     <p className="text-slate-400 text-sm mb-1">Input</p>
@@ -559,8 +682,9 @@ ${runtimeError}` : ""}`
 
               {testResults.length > 0 && (
                 <div className="mt-8 space-y-3">
-                  <h3 className="text-xl font-bold text-white">
-                    Test Results
+                  <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                    <ClipboardCheck size={20} className="text-cyan-300" />
+                    Official Test Results
                   </h3>
 
                   {testResults.map((test) => (
@@ -586,22 +710,24 @@ ${runtimeError}` : ""}`
                         {test.passed ? "Passed" : "Failed"}
                       </p>
 
-                      <p className="text-slate-300 mt-2">
-                        Input: {test.input}
-                      </p>
-
-                      <p className="text-slate-300">
-                        Expected: {test.expectedOutput}
-                      </p>
-
-                      <p className="text-slate-300 whitespace-pre-wrap">
-                        Your Output: {normalizeOutput(test.actualOutput)}
-                      </p>
+                      <RunBlock title="Input" value={test.input} tone="cyan" />
+                      <RunBlock
+                        title="Expected Output"
+                        value={test.expectedOutput}
+                        tone="green"
+                      />
+                      <RunBlock
+                        title="Your Output"
+                        value={normalizeOutput(test.actualOutput)}
+                        tone={test.passed ? "green" : "red"}
+                      />
 
                       {test.runtimeError && (
-                        <p className="text-red-300 mt-2 whitespace-pre-wrap">
-                          Error: {test.runtimeError}
-                        </p>
+                        <RunBlock
+                          title="Runtime / Syntax Error"
+                          value={test.runtimeError}
+                          tone="red"
+                        />
                       )}
                     </div>
                   ))}
@@ -609,15 +735,68 @@ ${runtimeError}` : ""}`
               )}
 
               {customRunResult && (
-                <div className="mt-8 rounded-[2rem] border border-cyan-400/20 bg-cyan-500/10 p-5">
-                  <h3 className="text-xl font-bold text-cyan-300 mb-3">
-                    Custom Input Run
+                <div
+                  className={`mt-8 rounded-[2rem] border p-5 ${
+                    customRunResult.runtimeError
+                      ? "border-red-400/20 bg-red-500/10"
+                      : "border-emerald-400/20 bg-emerald-500/10"
+                  }`}
+                >
+                  <h3
+                    className={`text-xl font-bold mb-4 flex items-center gap-2 ${
+                      customRunResult.runtimeError
+                        ? "text-red-300"
+                        : "text-emerald-300"
+                    }`}
+                  >
+                    {customRunResult.runtimeError ? (
+                      <XCircle size={20} />
+                    ) : (
+                      <CheckCircle size={20} />
+                    )}
+                    {customRunResult.runtimeError
+                      ? "Custom Run Failed"
+                      : "Custom Run Passed"}
                   </h3>
-                  <p className="text-slate-300 leading-7">
-                    This run is only for your custom input. It is not judged
-                    against official test cases. Click Submit to run official
-                    hidden/visible test cases.
+
+                  <p className="text-slate-300 leading-7 mb-4">
+                    This run uses your custom input only. It is useful for
+                    experimenting with your own cases. Click Submit to verify
+                    official visible test cases.
                   </p>
+
+                  <div className="space-y-4">
+                    <RunBlock
+                      title="Custom Input"
+                      value={customRunResult.input}
+                      tone="cyan"
+                    />
+
+                    <RunBlock
+                      title="Your Output"
+                      value={
+                        normalizeOutput(customRunResult.actualOutput) ||
+                        "No Output"
+                      }
+                      tone="green"
+                    />
+
+                    {customRunResult.inputIssue && (
+                      <RunBlock
+                        title="Input Format Warning"
+                        value={customRunResult.inputIssue}
+                        tone="yellow"
+                      />
+                    )}
+
+                    {customRunResult.runtimeError && (
+                      <RunBlock
+                        title="Runtime / Syntax Error"
+                        value={customRunResult.runtimeError}
+                        tone="red"
+                      />
+                    )}
+                  </div>
                 </div>
               )}
 
@@ -630,7 +809,7 @@ ${runtimeError}` : ""}`
 
                   <div className="space-y-2">
                     {hints.map((hint, index) => (
-                      <p key={index} className="text-yellow-100 leading-7">
+                      <p key={`${hint}-${index}`} className="text-yellow-100 leading-7">
                         {index + 1}. {hint}
                       </p>
                     ))}
@@ -673,8 +852,7 @@ ${runtimeError}` : ""}`
                   </h2>
 
                   <p className="text-slate-400 text-sm">
-                    Piston runner enabled for JavaScript, Python, Java, C, C++
-                    and Go.
+                    Run uses custom input. Submit verifies official test cases.
                   </p>
                 </div>
 
@@ -724,14 +902,16 @@ ${runtimeError}` : ""}`
                 <textarea
                   value={stdin}
                   onChange={(e) => setStdin(e.target.value)}
-                  placeholder="Enter custom input here..."
+                  placeholder="Enter custom input exactly like the sample format. Example: [1,2,3] or hello"
                   className="w-full h-28 resize-none rounded-2xl bg-slate-900/80 border border-white/10 px-4 py-3 text-white outline-none focus:border-cyan-400"
                 />
 
-                <p className="text-white font-bold mt-4 mb-2">{customRunResult ? "Custom Run Output" : "Output"}</p>
+                <p className="text-white font-bold mt-4 mb-2">
+                  {customRunResult ? "Custom Run Output" : "Output"}
+                </p>
 
                 <pre className="min-h-28 max-h-60 overflow-auto rounded-2xl bg-black/50 border border-white/10 px-4 py-3 text-emerald-300 whitespace-pre-wrap">
-                  {output || "Run your code to see output here..."}
+                  {output || "Run with custom input to see output here..."}
                 </pre>
               </div>
             </section>
@@ -766,6 +946,38 @@ function Badge({ text, tone = "cyan" }) {
     >
       {text}
     </span>
+  )
+}
+
+function InfoMini({ title, value }) {
+  return (
+    <div className="rounded-2xl border border-white/10 bg-slate-950/60 p-4">
+      <p className="text-slate-500 text-sm mb-2">{title}</p>
+      <p className="text-slate-300 leading-6 text-sm">{value}</p>
+    </div>
+  )
+}
+
+function RunBlock({ title, value, tone = "cyan" }) {
+  const tones = {
+    cyan: "text-cyan-300",
+    green: "text-emerald-300",
+    red: "text-red-300",
+    yellow: "text-yellow-200"
+  }
+
+  return (
+    <div className="mt-3">
+      <p className="text-slate-400 text-sm mb-1">{title}</p>
+
+      <pre
+        className={`rounded-xl bg-black/40 border border-white/10 p-4 overflow-auto whitespace-pre-wrap ${
+          tones[tone] || tones.cyan
+        }`}
+      >
+        {value || "No data"}
+      </pre>
+    </div>
   )
 }
 
