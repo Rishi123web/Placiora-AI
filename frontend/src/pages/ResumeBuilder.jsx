@@ -19,8 +19,6 @@ import {
   Mail,
   Phone,
   MapPin,
-  Github,
-  Linkedin,
   Globe,
   Star,
   ShieldCheck,
@@ -29,8 +27,16 @@ import {
 
 const templates = [
   { id: "linkedin", name: "LinkedIn Pro", accent: "from-blue-500 to-cyan-500" },
-  { id: "premium", name: "Premium Sidebar", accent: "from-emerald-500 to-cyan-600" },
-  { id: "placiora", name: "Placiora Signature", accent: "from-purple-500 to-cyan-500" }
+  {
+    id: "premium",
+    name: "Premium Sidebar",
+    accent: "from-emerald-500 to-cyan-600"
+  },
+  {
+    id: "placiora",
+    name: "Placiora Signature",
+    accent: "from-purple-500 to-cyan-500"
+  }
 ]
 
 function ResumeBuilder() {
@@ -110,7 +116,6 @@ function ResumeBuilder() {
 
   const downloadResume = () => {
     if (!resume?._id) return
-
     window.open(`${API_BASE}/api/resume-builder/download/${resume._id}`, "_blank")
   }
 
@@ -143,8 +148,9 @@ function ResumeBuilder() {
                 </h1>
 
                 <p className="text-slate-400 mt-2 max-w-3xl">
-                  Generate recruiter-ready resumes with premium templates, ATS score,
-                  skill tags, polished summaries and professional PDF export.
+                  Generate recruiter-ready resumes with premium templates, ATS
+                  score, skill tags, polished summaries and professional PDF
+                  export.
                 </p>
               </div>
             </div>
@@ -197,7 +203,9 @@ function ResumeBuilder() {
                     }`}
                   >
                     <Palette size={16} className="text-cyan-300 mb-2" />
-                    <p className="text-white font-semibold text-sm">{item.name}</p>
+                    <p className="text-white font-semibold text-sm">
+                      {item.name}
+                    </p>
                   </button>
                 ))}
               </div>
@@ -208,8 +216,8 @@ function ResumeBuilder() {
                 <Input icon={Phone} label="Phone" name="phone" value={form.phone} onChange={handleChange} />
                 <Input icon={MapPin} label="Location" name="location" value={form.location} onChange={handleChange} />
                 <Input icon={Briefcase} label="Target Role" name="targetRole" value={form.targetRole} onChange={handleChange} />
-                <Input icon={Linkedin} label="LinkedIn URL" name="linkedin" value={form.linkedin} onChange={handleChange} />
-                <Input icon={Github} label="GitHub URL" name="github" value={form.github} onChange={handleChange} />
+                <Input icon={Globe} label="LinkedIn URL" name="linkedin" value={form.linkedin} onChange={handleChange} />
+                <Input icon={FolderGit2} label="GitHub URL" name="github" value={form.github} onChange={handleChange} />
                 <Input icon={Globe} label="Portfolio URL" name="portfolio" value={form.portfolio} onChange={handleChange} />
               </div>
 
@@ -243,7 +251,6 @@ function ResumeBuilder() {
                   <h2 className="text-2xl font-bold text-white">
                     Resume Preview
                   </h2>
-
                   <p className="text-slate-400 mt-1">
                     Premium recruiter-style resume preview.
                   </p>
@@ -279,11 +286,9 @@ function EmptyPreview() {
     <div className="min-h-[640px] flex items-center justify-center text-center text-slate-400 border border-dashed border-white/10 rounded-3xl bg-slate-950/40">
       <div>
         <FileText className="mx-auto mb-4 text-slate-600" size={70} />
-
         <h3 className="text-2xl font-bold text-white mb-2">
           No resume generated yet
         </h3>
-
         <p>Fill your details and click Generate Premium Resume.</p>
       </div>
     </div>
@@ -322,8 +327,8 @@ function PremiumResumePreview({ resume, template }) {
           <Contact icon={Mail} text={resume.email} />
           <Contact icon={Phone} text={resume.phone} />
           <Contact icon={MapPin} text={resume.location} />
-          <Contact icon={Linkedin} text={resume.linkedin} />
-          <Contact icon={Github} text={resume.github} />
+          <Contact icon={Globe} text={resume.linkedin} />
+          <Contact icon={FolderGit2} text={resume.github} />
           <Contact icon={Globe} text={resume.portfolio} />
         </div>
       </div>
@@ -369,7 +374,8 @@ function PremiumResumePreview({ resume, template }) {
             <ShieldCheck className="text-cyan-300 mb-3" size={24} />
             <p className="font-bold">Recruiter Ready</p>
             <p className="text-xs text-slate-300 mt-1">
-              Optimized by Placiora AI for ATS readability and hiring manager review.
+              Optimized by Placiora AI for ATS readability and hiring manager
+              review.
             </p>
           </div>
         </aside>
