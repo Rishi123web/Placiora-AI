@@ -12,11 +12,14 @@ import {
   XCircle,
   RotateCcw,
   Mic,
+  MicOff,
   Square,
   Volume2,
   Check,
   RefreshCw,
   Camera,
+  Video,
+  VideoOff,
   Monitor,
   Clipboard,
   UserPlus,
@@ -30,7 +33,8 @@ import {
   Clock,
   Link2,
   KeyRound,
-  Bot
+  Bot,
+  PhoneOff
 } from "lucide-react"
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:5000"
@@ -64,6 +68,13 @@ const DEFAULT_COMPANIES = [
   "Zoho",
   "Freshworks"
 ]
+
+const RTC_CONFIG = {
+  iceServers: [
+    { urls: "stun:stun.l.google.com:19302" },
+    { urls: "stun:stun1.l.google.com:19302" }
+  ]
+}
 
 function LiveGDRound() {
   const [topic, setTopic] = useState("Impact of AI on Jobs")
@@ -108,6 +119,10 @@ function LiveGDRound() {
   const [recording, setRecording] = useState(false)
   const [transcribing, setTranscribing] = useState(false)
 
+  const [remoteStreams, setRemoteStreams] = useState([])
+  const [micOn, setMicOn] = useState(true)
+  const [cameraOn, setCameraOn] = useState(true)
+
   const videoRef = useRef(null)
   const socketRef = useRef(null)
   const previewStreamRef = useRef(null)
@@ -116,6 +131,11 @@ function LiveGDRound() {
   const mediaRecorderRef = useRef(null)
   const recordingStreamRef = useRef(null)
   const chunksRef = useRef([])
+
+  const peerConnectionsRef = useRef({})
+  const remoteStreamsRef = useRef({})
+  const roundIdRef = useRef("")
+  const participantsRef = useRef([])
 
   const user = JSON.parse(localStorage.getItem("user") || "{}")
   const userId = user?._id || user?.id || ""
@@ -129,11 +149,32 @@ function LiveGDRound() {
       ? roomState.aiCount
       : Math.max(0, 5 - humanCount)
 
+  useEffect(() => {
+    roundIdRef.current = roundId
+  }, [roundId])
+
+  useEffect(() => {
+    participantsRef.current = participants
+  }, [participants])
+
   const handleMouseMove = (e) => {
     const card = e.currentTarget
     const rect = card.getBoundingClientRect()
     card.style.setProperty("--x", `${e.clientX - rect.left}px`)
     card.style.setProperty("--y", `${e.clientY - rect.top}px`)
+  }
+
+  const closeAllPeers = () => {
+    Object.values(peerConnectionsRef.current).forEach((peer) => {
+      try {
+        peer.close()
+      } catch (err) {
+        console.log("Peer close error:", err)
+      }
+    })
+    peerConnectionsRef.current = {}
+    remoteStreamsRef.current = {}
+    setRemoteStreams([])
   }
 
   const stopStreams = () => {
@@ -164,12 +205,14 @@ function LiveGDRound() {
     }
   }
 
-  const emitDeviceReady = (room = roundId) => {
+  const emitDeviceReady = (room = roundIdRef.current) => {
     if (socketRef.current && room) {
       socketRef.current.emit("live-gd-device-ready", {
         roomId: room,
         micReady: true,
-        cameraReady: true
+        cameraReady: true,
+        micOn,
+        cameraOn
       })
     }
   }
@@ -227,6 +270,7 @@ function LiveGDRound() {
     const id = round._id || round.id || ""
 
     setRoundId(id)
+    roundIdRef.current = id
     setInviteCode(code)
     setMeetingCode(code)
 
@@ -246,6 +290,7 @@ function LiveGDRound() {
     setCompany(round.company || "General")
     setMessages(round.messages || [])
     setParticipants(round.participants || [])
+    participantsRef.current = round.participants || []
     setPendingParticipants(round.pendingParticipants || [])
     setAiParticipants(round.aiParticipants || [])
     setStarted(round.meetingStatus === "live")
@@ -280,6 +325,97 @@ function LiveGDRound() {
     }
   }
 
+
+  const addRemoteStream = (socketId, stream, userInfo = {}) => {
+    remoteStreamsRef.current[socketId] = {
+      socketId,
+      stream,
+      name: userInfo.name || "Participant",
+      email: userInfo.email || "",
+      micOn: userInfo.micOn !== false,
+      cameraOn: userInfo.cameraOn !== false,
+      micLevel: 35
+    }
+
+    setRemoteStreams(Object.values(remoteStreamsRef.current))
+  }
+
+  const removeRemoteStream = (socketId) => {
+    delete remoteStreamsRef.current[socketId]
+    setRemoteStreams(Object.values(remoteStreamsRef.current))
+
+    if (peerConnectionsRef.current[socketId]) {
+      peerConnectionsRef.current[socketId].close()
+      delete peerConnectionsRef.current[socketId]
+    }
+  }
+
+  const createPeerConnection = (targetSocketId, userInfo = {}) => {
+    if (!targetSocketId || !socketRef.current) return null
+
+    if (peerConnectionsRef.current[targetSocketId]) {
+      return peerConnectionsRef.current[targetSocketId]
+    }
+
+    const peer = new RTCPeerConnection(RTC_CONFIG)
+
+    peer.onicecandidate = (event) => {
+      if (event.candidate && socketRef.current) {
+        socketRef.current.emit("live-gd-webrtc-ice-candidate", {
+          roomId: roundIdRef.current,
+          to: targetSocketId,
+          candidate: event.candidate
+        })
+      }
+    }
+
+    peer.ontrack = (event) => {
+      const [stream] = event.streams
+      if (stream) addRemoteStream(targetSocketId, stream, userInfo)
+    }
+
+    if (previewStreamRef.current) {
+      previewStreamRef.current.getTracks().forEach((track) => {
+        peer.addTrack(track, previewStreamRef.current)
+      })
+    }
+
+    peerConnectionsRef.current[targetSocketId] = peer
+    return peer
+  }
+
+  const callPeer = async (targetSocketId, userInfo = {}) => {
+    if (!targetSocketId || targetSocketId === socketRef.current?.id) return
+
+    try {
+      const peer = createPeerConnection(targetSocketId, userInfo)
+      if (!peer) return
+
+      const offer = await peer.createOffer()
+      await peer.setLocalDescription(offer)
+
+      socketRef.current?.emit("live-gd-webrtc-offer", {
+        roomId: roundIdRef.current,
+        to: targetSocketId,
+        offer
+      })
+    } catch (err) {
+      console.log("WebRTC offer error:", err)
+    }
+  }
+
+  const callExistingUsers = (users = []) => {
+    users.forEach((item) => {
+      if (
+        item.socketId &&
+        item.socketId !== socketRef.current?.id &&
+        item.status === "approved"
+      ) {
+        callPeer(item.socketId, item)
+      }
+    })
+  }
+
   const registerSocketListeners = () => {
     if (!socketRef.current) return
 
@@ -299,14 +435,25 @@ function LiveGDRound() {
     socket.off("live-gd-rejected")
     socket.off("live-gd-host-transferred")
     socket.off("live-gd-error")
+    socket.off("live-gd-existing-users")
+    socket.off("live-gd-user-joined")
+    socket.off("live-gd-user-left")
+    socket.off("live-gd-device-state")
+    socket.off("live-gd-webrtc-offer")
+    socket.off("live-gd-webrtc-answer")
+    socket.off("live-gd-webrtc-ice-candidate")
 
     socket.on("live-gd-users-updated", (users) => {
-      setParticipants(Array.isArray(users) ? users : [])
+      const safeUsers = Array.isArray(users) ? users : []
+      setParticipants(safeUsers)
+      participantsRef.current = safeUsers
     })
 
     socket.on("live-gd-room-state", (state) => {
       setRoomState(state)
-      setParticipants(Array.isArray(state?.users) ? state.users : [])
+      const safeUsers = Array.isArray(state?.users) ? state.users : []
+      setParticipants(safeUsers)
+      participantsRef.current = safeUsers
       setPendingParticipants(Array.isArray(state?.pending) ? state.pending : [])
     })
 
@@ -333,14 +480,15 @@ function LiveGDRound() {
       setStarted(false)
     })
 
-    socket.on("live-gd-admitted", async () => {
+    socket.on("live-gd-admitted", async (payload = {}) => {
+      const admittedRoomId = payload.roomId || roundIdRef.current
       setWaitingApproval(false)
       setRejected(false)
       setRoomReady(true)
 
-      if (roundId) {
+      if (admittedRoomId) {
         try {
-          const res = await fetch(`${API_URL}/room/${roundId}`)
+          const res = await fetch(`${API_URL}/room/${admittedRoomId}`)
           const data = await res.json()
 
           if (data.success && data.round) {
@@ -356,8 +504,94 @@ function LiveGDRound() {
 
       setTimeout(() => {
         attachStreamToVideo()
-        emitDeviceReady()
-      }, 500)
+        emitDeviceReady(admittedRoomId)
+        callExistingUsers(payload.users || [])
+      }, 900)
+    })
+
+    socket.on("live-gd-existing-users", (users = []) => {
+      setTimeout(() => callExistingUsers(users), 700)
+    })
+
+    socket.on("live-gd-user-joined", (userItem) => {
+      if (userItem?.socketId && userItem.socketId !== socket.id) {
+        setTimeout(() => callPeer(userItem.socketId, userItem), 800)
+      }
+    })
+
+    socket.on("live-gd-user-left", ({ socketId }) => {
+      removeRemoteStream(socketId)
+    })
+
+    socket.on("live-gd-device-state", (payload = {}) => {
+      const existing = remoteStreamsRef.current[payload.socketId]
+
+      if (existing) {
+        remoteStreamsRef.current[payload.socketId] = {
+          ...existing,
+          micOn: payload.micOn !== false,
+          cameraOn: payload.cameraOn !== false
+        }
+        setRemoteStreams(Object.values(remoteStreamsRef.current))
+      }
+
+      setParticipants((prev) =>
+        prev.map((p) =>
+          p.socketId === payload.socketId
+            ? {
+                ...p,
+                micOn: payload.micOn !== false,
+                cameraOn: payload.cameraOn !== false,
+                micReady: payload.micReady,
+                cameraReady: payload.cameraReady
+              }
+            : p
+        )
+      )
+    })
+
+    socket.on("live-gd-webrtc-offer", async ({ from, offer }) => {
+      try {
+        const userInfo =
+          participantsRef.current.find((item) => item.socketId === from) || {}
+
+        const peer = createPeerConnection(from, userInfo)
+        if (!peer) return
+
+        await peer.setRemoteDescription(new RTCSessionDescription(offer))
+
+        const answer = await peer.createAnswer()
+        await peer.setLocalDescription(answer)
+
+        socket.emit("live-gd-webrtc-answer", {
+          roomId: roundIdRef.current,
+          to: from,
+          answer
+        })
+      } catch (err) {
+        console.log("WebRTC offer receive error:", err)
+      }
+    })
+
+    socket.on("live-gd-webrtc-answer", async ({ from, answer }) => {
+      try {
+        const peer = peerConnectionsRef.current[from]
+        if (!peer) return
+        await peer.setRemoteDescription(new RTCSessionDescription(answer))
+      } catch (err) {
+        console.log("WebRTC answer error:", err)
+      }
+    })
+
+    socket.on("live-gd-webrtc-ice-candidate", async ({ from, candidate }) => {
+      const peer = peerConnectionsRef.current[from]
+      if (!peer || !candidate) return
+
+      try {
+        await peer.addIceCandidate(new RTCIceCandidate(candidate))
+      } catch (error) {
+        console.log("ICE candidate error:", error)
+      }
     })
 
     socket.on("live-gd-rejected", (payload) => {
@@ -528,6 +762,8 @@ function LiveGDRound() {
 
       setCameraStatus("Working")
       setDeviceReady(true)
+      setMicOn(true)
+      setCameraOn(true)
 
       const AudioContext = window.AudioContext || window.webkitAudioContext
       const audioContext = new AudioContext()
@@ -581,6 +817,7 @@ function LiveGDRound() {
 
     return () => {
       stopStreams()
+      closeAllPeers()
       socketRef.current?.disconnect()
       window.speechSynthesis?.cancel()
     }
@@ -588,7 +825,7 @@ function LiveGDRound() {
 
   useEffect(() => {
     attachStreamToVideo()
-  }, [roomReady, started])
+  }, [roomReady, started, cameraOn])
 
   useEffect(() => {
     if (!isHost || !roundId || !roomReady) return
@@ -601,6 +838,7 @@ function LiveGDRound() {
         if (data.success && data.round) {
           setPendingParticipants(data.round.pendingParticipants || [])
           setParticipants(data.round.participants || [])
+          participantsRef.current = data.round.participants || []
           setAiParticipants(data.round.aiParticipants || [])
         }
       } catch (pollError) {
@@ -946,6 +1184,41 @@ function LiveGDRound() {
     }
   }
 
+
+  const toggleMic = () => {
+    const next = !micOn
+    setMicOn(next)
+
+    previewStreamRef.current?.getAudioTracks().forEach((track) => {
+      track.enabled = next
+    })
+
+    socketRef.current?.emit("live-gd-device-ready", {
+      roomId: roundId,
+      micReady: true,
+      cameraReady: true,
+      micOn: next,
+      cameraOn
+    })
+  }
+
+  const toggleCamera = () => {
+    const next = !cameraOn
+    setCameraOn(next)
+
+    previewStreamRef.current?.getVideoTracks().forEach((track) => {
+      track.enabled = next
+    })
+
+    socketRef.current?.emit("live-gd-device-ready", {
+      roomId: roundId,
+      micReady: true,
+      cameraReady: true,
+      micOn,
+      cameraOn: next
+    })
+  }
+
   const startRecording = async () => {
     try {
       setError("")
@@ -1191,6 +1464,7 @@ function LiveGDRound() {
   const resetGD = () => {
     window.speechSynthesis?.cancel()
     stopStreams()
+    closeAllPeers()
     socketRef.current?.disconnect()
     socketRef.current = null
 
@@ -1219,6 +1493,49 @@ function LiveGDRound() {
     setDeviceReady(false)
     setCameraStatus("Not started")
     setMicLevel(0)
+    setMicOn(true)
+    setCameraOn(true)
+  }
+
+
+  if (roomReady && !result) {
+    return (
+      <MeetRoom
+        userName={userName}
+        isHost={isHost}
+        started={started}
+        loading={loading}
+        finishGD={finishGD}
+        resetGD={resetGD}
+        videoRef={videoRef}
+        remoteStreams={remoteStreams}
+        micOn={micOn}
+        cameraOn={cameraOn}
+        micLevel={micLevel}
+        toggleMic={toggleMic}
+        toggleCamera={toggleCamera}
+        meetingCode={meetingCode || inviteCode}
+        inviteLink={inviteLink}
+        participants={participants}
+        aiParticipants={aiParticipants}
+        pendingParticipants={pendingParticipants}
+        admitParticipant={admitParticipant}
+        rejectParticipant={rejectParticipant}
+        startMeeting={startMeeting}
+        copyInviteLink={copyInviteLink}
+        copyMeetingCode={copyMeetingCode}
+        messages={messages}
+        userNameForChat={userName}
+        userMessage={userMessage}
+        setUserMessage={setUserMessage}
+        recording={recording}
+        transcribing={transcribing}
+        startRecording={startRecording}
+        stopRecording={stopRecording}
+        sendMessage={sendMessage}
+        liveEvaluation={liveEvaluation}
+      />
+    )
   }
 
   return (
@@ -1718,6 +2035,465 @@ function MeetingInfoPanel({
     </section>
   )
 }
+
+
+function MeetRoom({
+  userName,
+  isHost,
+  started,
+  loading,
+  finishGD,
+  resetGD,
+  videoRef,
+  remoteStreams,
+  micOn,
+  cameraOn,
+  micLevel,
+  toggleMic,
+  toggleCamera,
+  meetingCode,
+  inviteLink,
+  participants,
+  aiParticipants,
+  pendingParticipants,
+  admitParticipant,
+  rejectParticipant,
+  startMeeting,
+  copyInviteLink,
+  copyMeetingCode,
+  messages,
+  userNameForChat,
+  userMessage,
+  setUserMessage,
+  recording,
+  transcribing,
+  startRecording,
+  stopRecording,
+  sendMessage,
+  liveEvaluation
+}) {
+  const [sidePanel, setSidePanel] = useState("chat")
+
+  const totalTiles = remoteStreams.length + 1
+  const gridClass =
+    totalTiles <= 1
+      ? "grid-cols-1"
+      : totalTiles === 2
+      ? "grid-cols-1 md:grid-cols-2"
+      : "grid-cols-1 md:grid-cols-2 xl:grid-cols-3"
+
+  return (
+    <div className="fixed inset-0 z-[9999] bg-[#202124] text-white overflow-hidden">
+      <div className="h-16 px-4 md:px-6 flex items-center justify-between border-b border-white/10 bg-[#202124]">
+        <div>
+          <p className="font-bold text-lg">Placiora Live GD</p>
+          <p className="text-xs text-slate-300">
+            Code: {meetingCode || "------"} ·{" "}
+            {started ? "GD Live" : "Waiting to start"}
+          </p>
+        </div>
+
+        <div className="hidden md:flex items-center gap-2">
+          <button
+            type="button"
+            onClick={copyInviteLink}
+            className="px-4 py-2 rounded-full bg-[#3c4043] hover:bg-[#4b4f52] text-sm"
+          >
+            Copy Link
+          </button>
+
+          <button
+            type="button"
+            onClick={copyMeetingCode}
+            className="px-4 py-2 rounded-full bg-[#3c4043] hover:bg-[#4b4f52] text-sm"
+          >
+            Copy Code
+          </button>
+
+          {isHost && (
+            <button
+              type="button"
+              onClick={startMeeting}
+              disabled={loading}
+              className="px-4 py-2 rounded-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-sm"
+            >
+              Start GD
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="h-[calc(100vh-144px)] grid grid-cols-1 lg:grid-cols-[1fr_360px]">
+        <div className="p-3 md:p-4 overflow-hidden">
+          <div className={`grid ${gridClass} gap-3 h-full`}>
+            <MeetVideoTile
+              name={`${userName}${isHost ? " (Host)" : ""}`}
+              streamRef={videoRef}
+              muted
+              micOn={micOn}
+              cameraOn={cameraOn}
+              micLevel={micLevel}
+              isLocal
+            />
+
+            {remoteStreams.map((remote) => (
+              <RemoteMeetVideoTile key={remote.socketId} remote={remote} />
+            ))}
+
+            {remoteStreams.length === 0 && (
+              <div className="hidden md:flex rounded-xl bg-[#2b2c2f] border border-white/10 items-center justify-center text-center p-6">
+                <div>
+                  <Users size={42} className="mx-auto mb-3 text-slate-400" />
+                  <p className="text-slate-300 font-semibold">
+                    Waiting for admitted participants
+                  </p>
+                  <p className="text-xs text-slate-500 mt-2 break-all">
+                    {inviteLink}
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="hidden lg:flex flex-col border-l border-white/10 bg-[#1f2023]">
+          <div className="flex border-b border-white/10">
+            <button
+              type="button"
+              onClick={() => setSidePanel("chat")}
+              className={`flex-1 py-3 text-sm ${
+                sidePanel === "chat" ? "bg-white/10" : ""
+              }`}
+            >
+              Chat
+            </button>
+            <button
+              type="button"
+              onClick={() => setSidePanel("people")}
+              className={`flex-1 py-3 text-sm ${
+                sidePanel === "people" ? "bg-white/10" : ""
+              }`}
+            >
+              People
+            </button>
+          </div>
+
+          {sidePanel === "chat" ? (
+            <MeetChatPanel
+              messages={messages}
+              userName={userNameForChat}
+              userMessage={userMessage}
+              setUserMessage={setUserMessage}
+              recording={recording}
+              transcribing={transcribing}
+              loading={loading}
+              startRecording={startRecording}
+              stopRecording={stopRecording}
+              sendMessage={sendMessage}
+            />
+          ) : (
+            <MeetPeoplePanel
+              isHost={isHost}
+              participants={participants}
+              aiParticipants={aiParticipants}
+              pendingParticipants={pendingParticipants}
+              admitParticipant={admitParticipant}
+              rejectParticipant={rejectParticipant}
+            />
+          )}
+        </div>
+      </div>
+
+      {liveEvaluation && (
+        <div className="hidden md:block absolute left-5 bottom-24 rounded-xl bg-black/60 backdrop-blur border border-emerald-400/20 p-3 max-w-xl">
+          <p className="text-emerald-300 font-semibold text-sm">
+            Live Feedback
+          </p>
+          <p className="text-xs text-slate-200 mt-1">
+            {liveEvaluation.feedback ||
+              "Good participation. Add examples and respond to others."}
+          </p>
+        </div>
+      )}
+
+      <div className="h-20 px-4 flex items-center justify-center gap-4 border-t border-white/10 bg-[#202124]">
+        <button
+          type="button"
+          onClick={toggleMic}
+          className={`w-12 h-12 rounded-full flex items-center justify-center ${
+            micOn ? "bg-[#3c4043] hover:bg-[#4b4f52]" : "bg-red-600"
+          }`}
+        >
+          {micOn ? <Mic size={22} /> : <MicOff size={22} />}
+        </button>
+
+        <button
+          type="button"
+          onClick={toggleCamera}
+          className={`w-12 h-12 rounded-full flex items-center justify-center ${
+            cameraOn ? "bg-[#3c4043] hover:bg-[#4b4f52]" : "bg-red-600"
+          }`}
+        >
+          {cameraOn ? <Video size={22} /> : <VideoOff size={22} />}
+        </button>
+
+        {isHost && (
+          <button
+            type="button"
+            onClick={finishGD}
+            disabled={loading}
+            className="px-5 h-12 rounded-full bg-red-600 hover:bg-red-700 font-semibold disabled:opacity-50"
+          >
+            End
+          </button>
+        )}
+
+        <button
+          type="button"
+          onClick={resetGD}
+          className="w-12 h-12 rounded-full bg-red-700 hover:bg-red-800 flex items-center justify-center"
+        >
+          <PhoneOff size={22} />
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function MeetVideoTile({
+  name,
+  streamRef,
+  muted = false,
+  micOn = true,
+  cameraOn = true,
+  micLevel = 0,
+  isLocal = false
+}) {
+  return (
+    <div
+      className={`relative rounded-xl overflow-hidden bg-[#111] border border-black/40 shadow-lg ${
+        micOn && micLevel > 15 ? "ring-4 ring-blue-500" : ""
+      }`}
+    >
+      {cameraOn ? (
+        <video
+          ref={streamRef}
+          autoPlay
+          muted={muted}
+          playsInline
+          className="w-full h-full object-cover"
+        />
+      ) : (
+        <div className="w-full h-full min-h-[240px] flex items-center justify-center bg-[#2b2c2f]">
+          <div className="w-24 h-24 rounded-full bg-purple-600 flex items-center justify-center text-4xl font-bold">
+            {name?.[0] || "U"}
+          </div>
+        </div>
+      )}
+
+      <div className="absolute left-3 bottom-3 bg-black/55 px-3 py-1.5 rounded text-sm">
+        {name}
+      </div>
+
+      <div className="absolute right-3 top-3 w-9 h-9 rounded-full bg-black/60 flex items-center justify-center">
+        {micOn ? (
+          <div
+            className="rounded-full bg-blue-400 transition-all"
+            style={{
+              width: `${8 + Math.min(isLocal ? micLevel : 30, 40) / 2}px`,
+              height: `${8 + Math.min(isLocal ? micLevel : 30, 40) / 2}px`
+            }}
+          />
+        ) : (
+          <MicOff size={18} />
+        )}
+      </div>
+    </div>
+  )
+}
+
+function RemoteMeetVideoTile({ remote }) {
+  const ref = useRef(null)
+
+  useEffect(() => {
+    if (ref.current && remote.stream) {
+      ref.current.srcObject = remote.stream
+    }
+  }, [remote.stream])
+
+  return (
+    <MeetVideoTile
+      name={remote.name || "Participant"}
+      streamRef={ref}
+      muted={false}
+      micOn={remote.micOn}
+      cameraOn={remote.cameraOn}
+      micLevel={remote.micLevel || 30}
+    />
+  )
+}
+
+function MeetChatPanel({
+  messages,
+  userName,
+  userMessage,
+  setUserMessage,
+  recording,
+  transcribing,
+  loading,
+  startRecording,
+  stopRecording,
+  sendMessage
+}) {
+  return (
+    <div className="flex-1 flex flex-col min-h-0">
+      <div className="flex-1 overflow-y-auto p-4 space-y-3">
+        {messages.map((msg, index) => (
+          <div
+            key={`${msg.name || "message"}-${index}`}
+            className={`rounded-xl p-3 border ${
+              msg.name === userName
+                ? "bg-cyan-500/20 border-cyan-400/30"
+                : msg.speaker === "system"
+                ? "bg-slate-500/10 border-slate-400/20"
+                : "bg-purple-500/20 border-purple-400/30"
+            }`}
+          >
+            <p className="font-semibold text-sm">
+              {msg.name || "Participant"}{" "}
+              <span className="text-slate-400">{msg.role || ""}</span>
+            </p>
+            <p className="text-sm text-slate-200 mt-1 leading-6">
+              {msg.message}
+            </p>
+          </div>
+        ))}
+      </div>
+
+      <div className="p-4 border-t border-white/10">
+        <textarea
+          value={userMessage}
+          onChange={(e) => setUserMessage(e.target.value)}
+          placeholder="Speak or type your GD point..."
+          className="w-full h-24 rounded-xl bg-[#202124] border border-white/10 p-3 text-sm outline-none resize-none"
+        />
+
+        <div className="flex gap-2 mt-3">
+          <button
+            type="button"
+            onClick={recording ? stopRecording : startRecording}
+            disabled={loading || transcribing}
+            className={`flex-1 rounded-xl py-3 text-sm font-semibold flex items-center justify-center gap-2 ${
+              recording ? "bg-red-600" : "bg-emerald-600"
+            } disabled:opacity-50`}
+          >
+            {recording ? <Square size={16} /> : <Mic size={16} />}
+            {recording ? "Stop" : transcribing ? "Transcribing..." : "Speak"}
+          </button>
+
+          <button
+            type="button"
+            onClick={sendMessage}
+            disabled={loading || transcribing || !userMessage.trim()}
+            className="flex-1 rounded-xl py-3 text-sm font-semibold bg-blue-600 disabled:opacity-50 flex items-center justify-center gap-2"
+          >
+            <Send size={16} />
+            Send
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function MeetPeoplePanel({
+  isHost,
+  participants,
+  aiParticipants,
+  pendingParticipants,
+  admitParticipant,
+  rejectParticipant
+}) {
+  return (
+    <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div>
+        <h3 className="text-sm font-semibold text-slate-300 mb-2">
+          Participants
+        </h3>
+
+        <div className="space-y-2">
+          {participants.map((p, index) => (
+            <ParticipantCard
+              key={p.socketId || p.email || index}
+              participant={p}
+            />
+          ))}
+        </div>
+      </div>
+
+      <div>
+        <h3 className="text-sm font-semibold text-slate-300 mb-2">
+          AI Participants
+        </h3>
+
+        <div className="space-y-2">
+          {aiParticipants.map((ai, index) => (
+            <AIParticipantCard key={`${ai.name}-${index}`} ai={ai} />
+          ))}
+        </div>
+      </div>
+
+      {isHost && (
+        <div>
+          <h3 className="text-sm font-semibold text-yellow-300 mb-2">
+            Waiting Room
+          </h3>
+
+          {pendingParticipants.length === 0 ? (
+            <p className="text-xs text-slate-400">No pending requests.</p>
+          ) : (
+            <div className="space-y-2">
+              {pendingParticipants.map((item, index) => (
+                <div
+                  key={item.socketId || item.email || index}
+                  className="rounded-xl border border-white/10 bg-slate-950/60 p-3"
+                >
+                  <p className="font-semibold text-white">
+                    {item.name || "Participant"}
+                  </p>
+                  <p className="text-xs text-slate-400">
+                    {item.email || "No email"}
+                  </p>
+
+                  <div className="flex gap-2 mt-3">
+                    <button
+                      type="button"
+                      onClick={() => admitParticipant(item)}
+                      className="flex-1 rounded-xl bg-emerald-600 hover:bg-emerald-700 py-2 text-white font-semibold text-sm flex items-center justify-center gap-2"
+                    >
+                      <UserCheck size={15} />
+                      Admit
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => rejectParticipant(item)}
+                      className="flex-1 rounded-xl bg-red-500 hover:bg-red-600 py-2 text-white font-semibold text-sm flex items-center justify-center gap-2"
+                    >
+                      <UserX size={15} />
+                      Reject
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 
 function WaitingRoom({ meetingCode, topic, company, resetGD }) {
   return (
