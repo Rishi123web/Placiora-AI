@@ -1,6 +1,7 @@
 import express from "express"
 import mongoose from "mongoose"
 import OpenAI from "openai"
+import PDFDocument from "pdfkit"
 import multer from "multer"
 import fs from "fs"
 import path from "path"
@@ -1302,7 +1303,10 @@ router.get("/history/:userId", async (req, res) => {
       success: true,
       rounds: rounds.map((round) => ({
         ...round,
-        _id: round._id.toString()
+        _id: round._id.toString(),
+        recordingUrl: round.recordingUrl || "",
+        reportReady: Boolean(round.reportReady || round.completed),
+        type: "Live GD Round"
       }))
     })
   } catch {
@@ -1358,6 +1362,325 @@ router.get("/history-user/:userId", async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Failed to load Live GD history",
+      error: process.env.NODE_ENV === "production" ? undefined : error.message
+    })
+  }
+})
+
+
+
+const drawReportHeader = (doc, round) => {
+  const pageWidth = doc.page.width
+
+  doc.rect(0, 0, pageWidth, 128).fill("#020617")
+
+  doc
+    .fontSize(25)
+    .fillColor("#ffffff")
+    .text("Placiora AI", 44, 34)
+
+  doc
+    .fontSize(10)
+    .fillColor("#67e8f9")
+    .text("Live Group Discussion Performance Report", 44, 66)
+
+  doc
+    .fontSize(8)
+    .fillColor("#cbd5e1")
+    .text(`Generated on ${new Date().toLocaleString()}`, 44, 88)
+
+  doc
+    .roundedRect(pageWidth - 190, 34, 145, 52, 12)
+    .fill("#0f172a")
+    .strokeColor("#22d3ee")
+    .stroke()
+
+  doc
+    .fontSize(8)
+    .fillColor("#94a3b8")
+    .text("OVERALL SCORE", pageWidth - 170, 47)
+
+  doc
+    .fontSize(22)
+    .fillColor("#67e8f9")
+    .text(`${round.overallScore || 0}%`, pageWidth - 170, 60)
+
+  doc.fillColor("#000000")
+}
+
+const drawReportSectionTitle = (doc, title, y) => {
+  doc
+    .fontSize(13)
+    .fillColor("#0f172a")
+    .text(title.toUpperCase(), 44, y)
+
+  doc
+    .moveTo(44, y + 18)
+    .lineTo(550, y + 18)
+    .strokeColor("#22d3ee")
+    .lineWidth(1)
+    .stroke()
+
+  return y + 30
+}
+
+const drawScoreCard = (doc, label, score, x, y, width = 96) => {
+  const safeScore = clampScore(score)
+
+  doc
+    .roundedRect(x, y, width, 62, 12)
+    .fill("#f8fafc")
+    .strokeColor("#dbeafe")
+    .stroke()
+
+  doc
+    .fontSize(8)
+    .fillColor("#64748b")
+    .text(label, x + 10, y + 11, { width: width - 20 })
+
+  doc
+    .fontSize(19)
+    .fillColor("#0f172a")
+    .text(`${safeScore}%`, x + 10, y + 29)
+
+  doc
+    .roundedRect(x + 10, y + 51, width - 20, 5, 2)
+    .fill("#e2e8f0")
+
+  doc
+    .roundedRect(x + 10, y + 51, ((width - 20) * safeScore) / 100, 5, 2)
+    .fill("#06b6d4")
+}
+
+const drawBulletList = (doc, items = [], x, y, width) => {
+  const safeItems = Array.isArray(items) && items.length ? items : ["No data available."]
+
+  safeItems.forEach((item) => {
+    doc
+      .fontSize(9.5)
+      .fillColor("#334155")
+      .text(`• ${item}`, x, y, {
+        width,
+        lineGap: 2
+      })
+
+    y = doc.y + 5
+  })
+
+  return y
+}
+
+router.get("/report/:roundId", async (req, res) => {
+  try {
+    const { roundId } = req.params
+
+    if (!roundId || !mongoose.Types.ObjectId.isValid(roundId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Valid Live GD round ID is required"
+      })
+    }
+
+    const round = await LiveGDRound.collection.findOne({
+      _id: new mongoose.Types.ObjectId(roundId)
+    })
+
+    if (!round) {
+      return res.status(404).json({
+        success: false,
+        message: "Live GD round not found"
+      })
+    }
+
+    const doc = new PDFDocument({
+      margin: 0,
+      size: "A4",
+      bufferPages: true
+    })
+
+    const safeTopic = String(round.topic || "Live-GD")
+      .replace(/[^a-z0-9]/gi, "-")
+      .slice(0, 60)
+
+    res.setHeader("Content-Type", "application/pdf")
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="Placiora-Live-GD-Report-${safeTopic}.pdf"`
+    )
+
+    doc.pipe(res)
+
+    drawReportHeader(doc, round)
+
+    let y = 155
+
+    doc
+      .fontSize(19)
+      .fillColor("#0f172a")
+      .text(round.topic || "Live Group Discussion", 44, y, {
+        width: 360
+      })
+
+    doc
+      .fontSize(9.5)
+      .fillColor("#64748b")
+      .text(
+        `${round.company || "General"} • ${round.difficulty || "Beginner"} • ${round.meetingCode || "N/A"}`,
+        44,
+        y + 28
+      )
+
+    doc
+      .roundedRect(420, y, 130, 44, 10)
+      .fill("#ecfeff")
+      .strokeColor("#a5f3fc")
+      .stroke()
+
+    doc
+      .fontSize(8)
+      .fillColor("#0891b2")
+      .text("RECRUITER VERDICT", 434, y + 10)
+
+    doc
+      .fontSize(11)
+      .fillColor("#0f172a")
+      .text(round.recruiterVerdict || "Not Available", 434, y + 25, {
+        width: 102
+      })
+
+    y += 78
+
+    y = drawReportSectionTitle(doc, "Performance Scorecard", y)
+
+    drawScoreCard(doc, "Communication", round.communicationScore, 44, y)
+    drawScoreCard(doc, "Content", round.contentScore, 150, y)
+    drawScoreCard(doc, "Leadership", round.leadershipScore, 256, y)
+    drawScoreCard(doc, "Confidence", round.confidenceScore, 362, y)
+    drawScoreCard(doc, "Overall", round.overallScore, 468, y)
+
+    y += 92
+    y = drawReportSectionTitle(doc, "Recruiter Feedback", y)
+
+    doc
+      .fontSize(10.5)
+      .fillColor("#334155")
+      .text(round.feedback || "No feedback available.", 44, y, {
+        width: 506,
+        lineGap: 4
+      })
+
+    y = doc.y + 24
+
+    y = drawReportSectionTitle(doc, "Strengths & Improvement Areas", y)
+
+    doc
+      .roundedRect(44, y, 245, 132, 12)
+      .fill("#f0fdf4")
+      .strokeColor("#bbf7d0")
+      .stroke()
+
+    doc
+      .fontSize(11)
+      .fillColor("#166534")
+      .text("Strengths", 60, y + 14)
+
+    drawBulletList(doc, round.strengths || [], 60, y + 36, 210)
+
+    doc
+      .roundedRect(305, y, 245, 132, 12)
+      .fill("#fef2f2")
+      .strokeColor("#fecaca")
+      .stroke()
+
+    doc
+      .fontSize(11)
+      .fillColor("#991b1b")
+      .text("Improvement Areas", 321, y + 14)
+
+    drawBulletList(doc, round.weaknesses || [], 321, y + 36, 210)
+
+    y += 160
+
+    y = drawReportSectionTitle(doc, "Improved GD Response", y)
+
+    doc
+      .fontSize(10)
+      .fillColor("#334155")
+      .text(round.improvedResponse || "No improved response available.", 44, y, {
+        width: 506,
+        lineGap: 4
+      })
+
+    y = doc.y + 24
+
+    y = drawReportSectionTitle(doc, "Session Assets", y)
+
+    doc
+      .fontSize(9.5)
+      .fillColor("#334155")
+      .text(`Recording: ${round.recordingUrl || "Not available"}`, 44, y, {
+        width: 506
+      })
+
+    doc
+      .fontSize(9.5)
+      .fillColor("#334155")
+      .text(`Participants: ${(round.participants || []).map((p) => p.name).filter(Boolean).join(", ") || "Not available"}`, 44, y + 18, {
+        width: 506
+      })
+
+    if ((round.messages || []).length > 0) {
+      doc.addPage()
+      drawReportHeader(doc, round)
+
+      let tY = 155
+      tY = drawReportSectionTitle(doc, "Live GD Transcript", tY)
+
+      ;(round.messages || []).slice(0, 45).forEach((msg) => {
+        if (tY > 740) {
+          doc.addPage()
+          drawReportHeader(doc, round)
+          tY = 155
+        }
+
+        doc
+          .fontSize(9.5)
+          .fillColor(msg.speaker === "ai" ? "#7c3aed" : "#0f172a")
+          .text(`${msg.name || "Speaker"} (${msg.role || msg.speaker || "Participant"})`, 44, tY, {
+            width: 506
+          })
+
+        doc
+          .fontSize(9)
+          .fillColor("#334155")
+          .text(msg.message || "", 44, tY + 14, {
+            width: 506,
+            lineGap: 3
+          })
+
+        tY = doc.y + 12
+      })
+    }
+
+    const range = doc.bufferedPageRange()
+    for (let i = range.start; i < range.start + range.count; i++) {
+      doc.switchToPage(i)
+      doc
+        .fontSize(8)
+        .fillColor("#94a3b8")
+        .text(
+          "Generated by Placiora AI — Your Personal Placement Copilot",
+          44,
+          810,
+          { align: "center", width: 506 }
+        )
+    }
+
+    doc.end()
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Live GD report download failed",
       error: process.env.NODE_ENV === "production" ? undefined : error.message
     })
   }

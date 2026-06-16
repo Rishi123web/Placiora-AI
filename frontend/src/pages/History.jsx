@@ -21,7 +21,10 @@ import {
   MessagesSquare,
   Download,
   Video,
-  FileText
+  FileText,
+  ShieldCheck,
+  Award,
+  Users
 } from "lucide-react"
 
 const API_URL = API_BASE
@@ -72,8 +75,9 @@ function History() {
         }
 
         try {
+          const email = encodeURIComponent(user?.email || "")
           const res = await fetch(
-            `${API_URL}/api/live-gd-round/history/${userId}`
+            `${API_URL}/api/live-gd-round/history-user/${userId}?email=${email}`
           )
 
           if (res.ok) {
@@ -119,18 +123,38 @@ function History() {
     )
   }
 
+  const downloadGDReport = (round) => {
+    if (!round?._id) return
+
+    window.open(`${API_URL}/api/live-gd-round/report/${round._id}`, "_blank")
+  }
+
   const openRecording = (url) => {
     if (!url) return
     window.open(url, "_blank")
   }
 
+  const getGdVerdict = (round) => {
+    if (round?.recruiterVerdict) return round.recruiterVerdict
+
+    const score = Number(round?.overallScore) || 0
+
+    if (score >= 80) return "Likely Selected"
+    if (score >= 65) return "Borderline Select"
+    if (score >= 45) return "Needs Practice"
+
+    return "Not Evaluated"
+  }
+
+  const allScores = [
+    ...sessions.map((item) => Number(item.totalScore) || 0),
+    ...gdRounds.map((item) => Number(item.overallScore) || 0)
+  ].filter((score) => score > 0)
+
   const averageScore =
-    sessions.length > 0
+    allScores.length > 0
       ? Math.round(
-          sessions.reduce(
-            (sum, item) => sum + (Number(item.totalScore) || 0),
-            0
-          ) / sessions.length
+          allScores.reduce((sum, score) => sum + score, 0) / allScores.length
         )
       : 0
 
@@ -399,6 +423,39 @@ function History() {
                     />
                     <MetricBox label="Overall" value={round.overallScore || 0} />
                   </div>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-5">
+                    <div className="rounded-2xl border border-cyan-400/20 bg-cyan-500/10 p-4">
+                      <p className="text-slate-400 text-sm flex items-center gap-2">
+                        <ShieldCheck size={16} />
+                        Recruiter Verdict
+                      </p>
+                      <p className="text-cyan-300 font-black text-xl mt-2">
+                        {getGdVerdict(round)}
+                      </p>
+                    </div>
+
+                    <div className="rounded-2xl border border-purple-400/20 bg-purple-500/10 p-4">
+                      <p className="text-slate-400 text-sm flex items-center gap-2">
+                        <Users size={16} />
+                        Participants
+                      </p>
+                      <p className="text-purple-300 font-black text-xl mt-2">
+                        {(round.participants || []).length || 0}
+                      </p>
+                    </div>
+
+                    <div className="rounded-2xl border border-emerald-400/20 bg-emerald-500/10 p-4">
+                      <p className="text-slate-400 text-sm flex items-center gap-2">
+                        <Award size={16} />
+                        Report Status
+                      </p>
+                      <p className="text-emerald-300 font-black text-xl mt-2">
+                        {round.reportReady || round.completed ? "Ready" : "Draft"}
+                      </p>
+                    </div>
+                  </div>
+
+
 
                   {round.feedback && (
                     <div className="mt-5 rounded-2xl bg-slate-950/60 border border-white/10 p-4">
@@ -411,14 +468,47 @@ function History() {
                     </div>
                   )}
 
-                  <button
-                    type="button"
-                    onClick={() => setExpandedGD(open ? "" : roundId)}
-                    className="mt-5 inline-flex items-center gap-2 px-5 py-3 rounded-xl bg-white/10 hover:bg-white/15 text-white font-semibold"
-                  >
-                    {open ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
-                    {open ? "Hide Transcript" : "View Transcript"}
-                  </button>
+                  <div className="flex flex-wrap gap-3 mt-5">
+                    <button
+                      type="button"
+                      onClick={() => setExpandedGD(open ? "" : roundId)}
+                      className="inline-flex items-center gap-2 px-5 py-3 rounded-xl bg-white/10 hover:bg-white/15 text-white font-semibold"
+                    >
+                      {open ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+                      {open ? "Hide Transcript" : "View Transcript"}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => downloadGDReport(round)}
+                      className="inline-flex items-center gap-2 px-5 py-3 rounded-xl bg-cyan-500/10 border border-cyan-400/20 text-cyan-300 hover:bg-cyan-500/20 font-semibold"
+                    >
+                      <FileText size={18} />
+                      Download Placiora Report
+                    </button>
+
+                    {round.recordingUrl && (
+                      <button
+                        type="button"
+                        onClick={() => openRecording(round.recordingUrl)}
+                        className="inline-flex items-center gap-2 px-5 py-3 rounded-xl bg-purple-500/10 border border-purple-400/20 text-purple-300 hover:bg-purple-500/20 font-semibold"
+                      >
+                        <Video size={18} />
+                        View Recording
+                      </button>
+                    )}
+
+                    {round.recordingUrl && (
+                      <a
+                        href={round.recordingUrl}
+                        download
+                        className="inline-flex items-center gap-2 px-5 py-3 rounded-xl bg-emerald-500/10 border border-emerald-400/20 text-emerald-300 hover:bg-emerald-500/20 font-semibold"
+                      >
+                        <Download size={18} />
+                        Download Video
+                      </a>
+                    )}
+                  </div>
 
                   {open && (
                     <div className="mt-6 rounded-2xl border border-white/10 bg-slate-950/50 p-5">
@@ -443,9 +533,45 @@ function History() {
                             </div>
                           ))}
                         </div>
+                      ) : round.transcript ? (
+                        <pre className="whitespace-pre-wrap text-slate-300 leading-7">
+                          {round.transcript}
+                        </pre>
                       ) : (
                         <p className="text-slate-400">No transcript saved.</p>
                       )}
+
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-5">
+                        <div className="rounded-2xl border border-emerald-400/20 bg-emerald-500/10 p-4">
+                          <p className="text-emerald-300 font-semibold mb-3">
+                            Strengths
+                          </p>
+                          <ul className="space-y-2 text-slate-300">
+                            {(round.strengths || []).length > 0 ? (
+                              round.strengths.map((item, idx) => (
+                                <li key={`gd-strength-${idx}`}>• {item}</li>
+                              ))
+                            ) : (
+                              <li>Report strengths will appear after evaluation.</li>
+                            )}
+                          </ul>
+                        </div>
+
+                        <div className="rounded-2xl border border-red-400/20 bg-red-500/10 p-4">
+                          <p className="text-red-300 font-semibold mb-3">
+                            Improvement Areas
+                          </p>
+                          <ul className="space-y-2 text-slate-300">
+                            {(round.weaknesses || []).length > 0 ? (
+                              round.weaknesses.map((item, idx) => (
+                                <li key={`gd-weakness-${idx}`}>• {item}</li>
+                              ))
+                            ) : (
+                              <li>Improvement areas will appear after evaluation.</li>
+                            )}
+                          </ul>
+                        </div>
+                      </div>
                     </div>
                   )}
                 </FluidCard>
