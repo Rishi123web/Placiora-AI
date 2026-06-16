@@ -18,33 +18,52 @@ const getGroqClient = () => {
   })
 }
 
+const cleanText = (value = "") =>
+  String(value || "")
+    .replace(/\s+/g, " ")
+    .trim()
+
+const splitLines = (value = "") =>
+  String(value || "")
+    .split(/\n|;/)
+    .map((item) => cleanText(item))
+    .filter(Boolean)
+
+const splitSkills = (value = "") =>
+  String(value || "")
+    .split(/,|\n|;/)
+    .map((item) => cleanText(item))
+    .filter(Boolean)
+
 const safeArray = (value) => {
   if (!Array.isArray(value)) return []
 
-  return value.map((item) => {
-    if (typeof item === "string") return item
+  return value
+    .map((item) => {
+      if (typeof item === "string") return cleanText(item)
 
-    if (typeof item === "object" && item !== null) {
-      return (
-        item.achievementDescription ||
-        item.description ||
-        item.projectDescription ||
-        item.experienceDescription ||
-        item.achievement ||
-        item.title ||
-        JSON.stringify(item)
-      )
-    }
+      if (typeof item === "object" && item !== null) {
+        return cleanText(
+          item.achievementDescription ||
+            item.description ||
+            item.projectDescription ||
+            item.experienceDescription ||
+            item.achievement ||
+            item.title ||
+            JSON.stringify(item)
+        )
+      }
 
-    return String(item)
-  })
+      return cleanText(item)
+    })
+    .filter(Boolean)
 }
 
 const extractJSON = (text = "") => {
   try {
     return JSON.parse(text)
   } catch {
-    const match = text.match(/\{[\s\S]*\}/)
+    const match = String(text || "").match(/\{[\s\S]*\}/)
 
     try {
       if (match) return JSON.parse(match[0])
@@ -56,28 +75,50 @@ const extractJSON = (text = "") => {
   }
 }
 
+const calculateAtsScore = (data = {}, aiResult = {}) => {
+  let score = 35
+
+  if (data.fullName) score += 5
+  if (data.email) score += 5
+  if (data.phone) score += 5
+  if (data.linkedin || data.github || data.portfolio) score += 8
+  if (data.education) score += 8
+  if (splitSkills(data.skills).length >= 6) score += 12
+  if (splitLines(data.projects).length >= 1 || safeArray(aiResult.generatedProjects).length >= 1) score += 10
+  if (data.experience || safeArray(aiResult.generatedExperience).length >= 1) score += 8
+  if (data.achievements || safeArray(aiResult.generatedAchievements).length >= 1) score += 4
+  if (aiResult.generatedSummary && aiResult.generatedSummary.length > 100) score += 5
+
+  return Math.min(98, Math.max(45, score))
+}
+
 const fallbackResume = (data) => {
-  const skills = data.skills
-    ? data.skills.split(",").map((item) => item.trim()).filter(Boolean)
-    : ["React", "JavaScript", "Node.js", "MongoDB", "REST API"]
+  const role = cleanText(data.targetRole || "Full Stack Developer")
+  const skills = splitSkills(data.skills).length
+    ? splitSkills(data.skills)
+    : ["React", "JavaScript", "Node.js", "Express", "MongoDB", "REST APIs"]
 
   return {
-    generatedSummary: `Aspiring ${
-      data.targetRole || "Full Stack Developer"
-    } with hands-on experience in building responsive web applications, REST APIs, database-driven systems and AI-powered projects.`,
+    generatedHeadline: role,
+    generatedSummary: `Results-driven ${role} with hands-on experience building responsive web applications, REST APIs, database-driven systems and AI-powered projects. Strong foundation in full-stack development, clean UI implementation, backend integration and product-focused problem solving.`,
     generatedSkills: skills,
-    generatedProjects: [
-      `Built ${
-        data.projects || "a full-stack AI interview preparation platform"
-      } using modern frontend and backend technologies.`,
-      "Implemented authentication, dashboard analytics, resume analysis, interview history and AI feedback modules."
-    ],
-    generatedExperience: data.experience
-      ? [data.experience]
-      : ["Developed full-stack features using React, Node.js, Express and MongoDB."],
-    generatedAchievements: data.achievements
-      ? data.achievements.split("\n").filter(Boolean)
-      : ["Built multiple portfolio-ready full-stack modules."]
+    generatedProjects: splitLines(data.projects).length
+      ? splitLines(data.projects).map(
+          (item) =>
+            `${item} — Built production-ready features with modern frontend, backend and database technologies.`
+        )
+      : [
+          "Built a full-stack AI interview preparation platform using React, Node.js, Express and MongoDB with resume analysis, coding rounds and live interview modules.",
+          "Implemented authentication, dashboard analytics, AI feedback, interview history and role-based placement preparation workflows."
+        ],
+    generatedExperience: splitLines(data.experience).length
+      ? splitLines(data.experience)
+      : [
+          "Developed full-stack features using React, Node.js, Express and MongoDB, focusing on reusable components, API integration and user-friendly dashboards."
+        ],
+    generatedAchievements: splitLines(data.achievements).length
+      ? splitLines(data.achievements)
+      : ["Built multiple portfolio-ready full-stack modules for placement preparation."]
   }
 }
 
@@ -90,12 +131,16 @@ const generateResumeAI = async (data) => {
     const prompt = `
 Return ONLY valid JSON.
 
+Create premium recruiter-ready resume content.
+
+JSON format:
 {
-  "generatedSummary": "string",
-  "generatedSkills": ["string"],
-  "generatedProjects": ["string"],
-  "generatedExperience": ["string"],
-  "generatedAchievements": ["string"]
+  "generatedHeadline": "short professional headline",
+  "generatedSummary": "3-4 line strong professional summary",
+  "generatedSkills": ["skill"],
+  "generatedProjects": ["impact-focused bullet"],
+  "generatedExperience": ["impact-focused bullet"],
+  "generatedAchievements": ["achievement bullet"]
 }
 
 Candidate:
@@ -107,28 +152,41 @@ Projects: ${data.projects}
 Experience: ${data.experience}
 Achievements: ${data.achievements}
 
-Important:
-- Every array item must be a plain string.
-- Do not return objects inside arrays.
+Rules:
+- Use strong action verbs.
+- Make bullets measurable and recruiter friendly.
+- Keep it ATS compatible.
+- Do not invent fake company names.
+- Do not return objects in arrays.
 `
 
     const response = await groq.chat.completions.create({
       model: "llama-3.1-8b-instant",
       messages: [{ role: "user", content: prompt }],
-      temperature: 0.3
+      temperature: 0.35
     })
 
-    const parsed = extractJSON(response.choices[0].message.content)
+    const parsed = extractJSON(response.choices?.[0]?.message?.content)
 
     if (!parsed) return fallbackResume(data)
 
+    const fallback = fallbackResume(data)
+
     return {
-      generatedSummary:
-        parsed.generatedSummary || fallbackResume(data).generatedSummary,
-      generatedSkills: safeArray(parsed.generatedSkills),
-      generatedProjects: safeArray(parsed.generatedProjects),
-      generatedExperience: safeArray(parsed.generatedExperience),
-      generatedAchievements: safeArray(parsed.generatedAchievements)
+      generatedHeadline: cleanText(parsed.generatedHeadline || fallback.generatedHeadline),
+      generatedSummary: cleanText(parsed.generatedSummary || fallback.generatedSummary),
+      generatedSkills: safeArray(parsed.generatedSkills).length
+        ? safeArray(parsed.generatedSkills)
+        : fallback.generatedSkills,
+      generatedProjects: safeArray(parsed.generatedProjects).length
+        ? safeArray(parsed.generatedProjects)
+        : fallback.generatedProjects,
+      generatedExperience: safeArray(parsed.generatedExperience).length
+        ? safeArray(parsed.generatedExperience)
+        : fallback.generatedExperience,
+      generatedAchievements: safeArray(parsed.generatedAchievements).length
+        ? safeArray(parsed.generatedAchievements)
+        : fallback.generatedAchievements
     }
   } catch (error) {
     console.log("AI resume fallback used:", error.message)
@@ -138,9 +196,9 @@ Important:
 
 router.post("/generate", async (req, res) => {
   try {
-    const data = req.body
-
+    const data = req.body || {}
     const aiResult = await generateResumeAI(data)
+    const atsScore = calculateAtsScore(data, aiResult)
 
     const resume = await ResumeBuilder.create({
       userId:
@@ -169,9 +227,16 @@ router.post("/generate", async (req, res) => {
       generatedAchievements: safeArray(aiResult.generatedAchievements)
     })
 
+    const resumeObject = resume.toObject()
+
     res.status(201).json({
       success: true,
-      resume
+      resume: {
+        ...resumeObject,
+        generatedHeadline: aiResult.generatedHeadline || data.targetRole || "",
+        atsScore,
+        template: data.template || "linkedin"
+      }
     })
   } catch (error) {
     console.log("Resume builder generate error:", error)
@@ -179,7 +244,7 @@ router.post("/generate", async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Resume generation failed",
-      error: error.message
+      error: process.env.NODE_ENV === "production" ? undefined : error.message
     })
   }
 })
@@ -198,10 +263,78 @@ router.get("/history/:userId", async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Resume builder history failed",
-      error: error.message
+      error: process.env.NODE_ENV === "production" ? undefined : error.message
     })
   }
 })
+
+const drawPremiumHeader = (doc, resume) => {
+  doc.rect(0, 0, doc.page.width, 118).fill("#0f172a")
+
+  doc
+    .fontSize(26)
+    .fillColor("#ffffff")
+    .text(resume.fullName || "Resume", 50, 34, {
+      width: 330
+    })
+
+  doc
+    .fontSize(12)
+    .fillColor("#67e8f9")
+    .text(resume.targetRole || "Professional Candidate", 50, 68)
+
+  const contact = [
+    resume.email,
+    resume.phone,
+    resume.location,
+    resume.linkedin,
+    resume.github,
+    resume.portfolio
+  ]
+    .filter(Boolean)
+    .join("  •  ")
+
+  doc
+    .fontSize(8.5)
+    .fillColor("#cbd5e1")
+    .text(contact, 50, 92, {
+      width: doc.page.width - 100
+    })
+}
+
+const sectionTitle = (doc, title, x, y, width) => {
+  doc
+    .fontSize(11)
+    .fillColor("#0f172a")
+    .text(title.toUpperCase(), x, y, {
+      width
+    })
+
+  doc
+    .moveTo(x, y + 16)
+    .lineTo(x + width, y + 16)
+    .strokeColor("#38bdf8")
+    .lineWidth(1)
+    .stroke()
+
+  return y + 26
+}
+
+const bulletList = (doc, items, x, y, width) => {
+  safeArray(items).forEach((item) => {
+    doc
+      .fontSize(9.3)
+      .fillColor("#334155")
+      .text(`• ${item}`, x, y, {
+        width,
+        lineGap: 2
+      })
+
+    y = doc.y + 6
+  })
+
+  return y
+}
 
 router.get("/download/:id", async (req, res) => {
   try {
@@ -214,69 +347,84 @@ router.get("/download/:id", async (req, res) => {
       })
     }
 
-    const doc = new PDFDocument({ margin: 50 })
-    const fileName = `${resume.fullName || "resume"}-prep-ai-resume.pdf`
+    const doc = new PDFDocument({
+      margin: 0,
+      size: "A4",
+      bufferPages: true
+    })
+
+    const fileName = `${resume.fullName || "resume"}-placiora-premium-resume.pdf`
 
     res.setHeader("Content-Type", "application/pdf")
     res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`)
 
     doc.pipe(res)
 
-    doc.fontSize(24).fillColor("#111827").text(resume.fullName || "Resume", {
-      align: "center"
-    })
+    drawPremiumHeader(doc, resume)
 
-    doc.moveDown(0.4)
+    const pageW = doc.page.width
+    const leftX = 50
+    const rightX = 365
+    const leftW = 280
+    const rightW = 180
+
+    let yLeft = 145
+    let yRight = 145
+
+    yLeft = sectionTitle(doc, "Professional Summary", leftX, yLeft, leftW)
+    doc
+      .fontSize(9.7)
+      .fillColor("#334155")
+      .text(resume.generatedSummary || "", leftX, yLeft, {
+        width: leftW,
+        lineGap: 3
+      })
+    yLeft = doc.y + 18
+
+    yLeft = sectionTitle(doc, "Projects", leftX, yLeft, leftW)
+    yLeft = bulletList(doc, resume.generatedProjects || [], leftX, yLeft, leftW)
+
+    yLeft = sectionTitle(doc, "Experience", leftX, yLeft + 8, leftW)
+    yLeft = bulletList(doc, resume.generatedExperience || [], leftX, yLeft, leftW)
 
     doc
-      .fontSize(10)
-      .fillColor("#374151")
-      .text(`${resume.email || ""} | ${resume.phone || ""} | ${resume.location || ""}`, {
-        align: "center"
-      })
+      .rect(rightX - 18, 132, rightW + 36, 590)
+      .fill("#f8fafc")
+
+    yRight = sectionTitle(doc, "Skills", rightX, yRight, rightW)
+    safeArray(resume.generatedSkills || []).forEach((skill) => {
+      doc
+        .roundedRect(rightX, yRight, Math.min(rightW, skill.length * 5.6 + 22), 19, 8)
+        .fill("#e0f2fe")
+
+      doc
+        .fontSize(8.5)
+        .fillColor("#075985")
+        .text(skill, rightX + 9, yRight + 5, {
+          width: rightW - 10
+        })
+
+      yRight += 25
+    })
+
+    yRight += 10
+    yRight = sectionTitle(doc, "Education", rightX, yRight, rightW)
+    doc.fontSize(9.2).fillColor("#334155").text(resume.education || "", rightX, yRight, {
+      width: rightW,
+      lineGap: 2
+    })
+    yRight = doc.y + 18
+
+    yRight = sectionTitle(doc, "Achievements", rightX, yRight, rightW)
+    yRight = bulletList(doc, resume.generatedAchievements || [], rightX, yRight, rightW)
 
     doc
-      .fontSize(10)
-      .fillColor("#374151")
-      .text(`${resume.linkedin || ""} | ${resume.github || ""} | ${resume.portfolio || ""}`, {
-        align: "center"
+      .fontSize(8)
+      .fillColor("#64748b")
+      .text("Generated by Placiora AI Resume Builder", 50, 780, {
+        align: "center",
+        width: pageW - 100
       })
-
-    const section = (title) => {
-      doc.moveDown(0.8)
-      doc.fontSize(14).fillColor("#111827").text(title, { underline: true })
-      doc.moveDown(0.3)
-    }
-
-    section("Professional Summary")
-    doc.fontSize(11).fillColor("#374151").text(resume.generatedSummary || "")
-
-    section("Skills")
-    doc.fontSize(11).fillColor("#374151").text((resume.generatedSkills || []).join(", "))
-
-    section("Education")
-    doc.fontSize(11).fillColor("#374151").text(resume.education || "")
-
-    section("Projects")
-    ;(resume.generatedProjects || []).forEach((item) => {
-      doc.fontSize(11).fillColor("#374151").text(`• ${item}`)
-    })
-
-    section("Experience")
-    ;(resume.generatedExperience || []).forEach((item) => {
-      doc.fontSize(11).fillColor("#374151").text(`• ${item}`)
-    })
-
-    section("Achievements")
-    ;(resume.generatedAchievements || []).forEach((item) => {
-      doc.fontSize(11).fillColor("#374151").text(`• ${item}`)
-    })
-
-    doc.moveDown(2)
-
-    doc.fontSize(9).fillColor("#6b7280").text("Generated by Prep AI Resume Builder", {
-      align: "center"
-    })
 
     doc.end()
   } catch (error) {
@@ -285,7 +433,7 @@ router.get("/download/:id", async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Resume PDF download failed",
-      error: error.message
+      error: process.env.NODE_ENV === "production" ? undefined : error.message
     })
   }
 })
