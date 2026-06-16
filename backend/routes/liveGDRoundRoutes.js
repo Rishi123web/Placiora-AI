@@ -86,7 +86,9 @@ const normalizeMeetingCode = (input = "") => {
       const url = new URL(value)
       value = url.searchParams.get("invite") || ""
     }
-  } catch {}
+  } catch (error) {
+    return ""
+  }
 
   return value
     .replace("/live-gd-round?invite=", "")
@@ -323,13 +325,6 @@ router.post("/create-room", async (req, res) => {
       _id: inserted.insertedId.toString()
     }
 
-    console.log("LIVE GD ROOM SAVED RAW:", {
-      id: inserted.insertedId.toString(),
-      meetingCode,
-      inviteCode,
-      inviteLink
-    })
-
     res.status(201).json({
       success: true,
       roundId: inserted.insertedId.toString(),
@@ -339,8 +334,6 @@ router.post("/create-room", async (req, res) => {
       round
     })
   } catch (error) {
-    console.log("Create Live GD room error:", error)
-
     res.status(500).json({
       success: false,
       message: "Create room failed",
@@ -795,6 +788,144 @@ router.post("/transcribe", upload.single("audio"), async (req, res) => {
   }
 })
 
+
+const safeJsonParse = (text = "") => {
+  try {
+    const clean = String(text || "")
+      .replace(/```json/gi, "")
+      .replace(/```/g, "")
+      .trim()
+
+    const start = clean.indexOf("{")
+    const end = clean.lastIndexOf("}")
+
+    if (start === -1 || end === -1) return null
+
+    return JSON.parse(clean.slice(start, end + 1))
+  } catch {
+    return null
+  }
+}
+
+const buildLiveGDAiPrompt = ({ round, message, name, role }) => `
+You are Placiora AI, a professional placement group discussion moderator.
+
+Act like a real recruiter-led GD evaluator:
+- Keep the discussion structured and natural.
+- Encourage balanced participation.
+- Avoid repeating the same generic sentence.
+- Ask one sharp follow-up when needed.
+- Let AI participants respond with different viewpoints.
+- Keep messages concise, interview realistic and company-aware.
+- Score the user's latest contribution fairly.
+
+Topic: ${round.topic}
+Company: ${round.company}
+Difficulty: ${round.difficulty}
+Speaker: ${name} (${role})
+Latest message: "${message}"
+
+Recent transcript:
+${createTranscript((round.messages || []).slice(-10))}
+
+Return JSON only:
+{
+  "moderatorReply": "one short moderator guidance message",
+  "aiReplies": [
+    {
+      "name": "Priya",
+      "role": "AI Participant",
+      "personality": "Analytical",
+      "message": "specific useful point"
+    },
+    {
+      "name": "Rahul",
+      "role": "AI Participant",
+      "personality": "Technical",
+      "message": "specific useful point"
+    }
+  ],
+  "evaluation": {
+    "communicationScore": 0,
+    "contentScore": 0,
+    "leadershipScore": 0,
+    "confidenceScore": 0,
+    "relevanceScore": 0,
+    "feedback": "short recruiter-style feedback"
+  }
+}
+`
+
+const generateLiveGDAiResponse = async ({ round, message, name, role }) => {
+  const activeAi =
+    (round.aiParticipants || []).filter((item) => item.active) ||
+    getActiveAiParticipants((round.participants || []).length)
+
+  const fallback = {
+    moderatorReply:
+      "Good point. Now try to connect it with a real example and invite another participant to add their view.",
+    aiReplies: activeAi.slice(0, 2).map((ai) => ({
+      name: ai.name,
+      role: ai.role,
+      personality: ai.personality,
+      message:
+        ai.personality === "Technical"
+          ? `From a technical angle, ${round.topic} needs practical examples, measurable impact and realistic solutions.`
+          : ai.personality === "Critical Thinker"
+          ? `We should also consider risks, ethics and long-term consequences before reaching a conclusion.`
+          : `This point can be stronger if we balance benefits, challenges and a practical example.`
+    })),
+    evaluation: {
+      communicationScore: 68,
+      contentScore: 66,
+      leadershipScore: 62,
+      confidenceScore: 66,
+      relevanceScore: 70,
+      feedback:
+        "Good participation. Add a concrete example, acknowledge others and keep your answer structured."
+    }
+  }
+
+  const groq = getGroqClient()
+
+  if (!groq) return fallback
+
+  try {
+    const completion = await groq.chat.completions.create({
+      model: "llama-3.1-8b-instant",
+      temperature: 0.45,
+      max_tokens: 900,
+      messages: [
+        {
+          role: "system",
+          content:
+            "You are a strict JSON generator for a placement group discussion AI moderator."
+        },
+        {
+          role: "user",
+          content: buildLiveGDAiPrompt({ round, message, name, role })
+        }
+      ]
+    })
+
+    const parsed = safeJsonParse(completion.choices?.[0]?.message?.content)
+
+    if (!parsed) return fallback
+
+    return {
+      moderatorReply: parsed.moderatorReply || fallback.moderatorReply,
+      aiReplies:
+        Array.isArray(parsed.aiReplies) && parsed.aiReplies.length
+          ? parsed.aiReplies.slice(0, 3)
+          : fallback.aiReplies,
+      evaluation: parsed.evaluation || fallback.evaluation
+    }
+  } catch {
+    return fallback
+  }
+}
+
+
 router.post("/speak", async (req, res) => {
   try {
     const {
@@ -842,21 +973,39 @@ router.post("/speak", async (req, res) => {
       updatedAt: new Date()
     }
 
-    const activeAi =
-      (round.aiParticipants || []).filter((item) => item.active) ||
-      getActiveAiParticipants((round.participants || []).length)
+    const aiResult = await generateLiveGDAiResponse({
+      round,
+      message: message.trim(),
+      name,
+      role
+    })
 
-    const aiReplies = activeAi.slice(0, 3).map((ai) => ({
+    const moderatorMessage = {
       speaker: "ai",
-      name: ai.name,
-      role: ai.role,
-      personality: ai.personality,
-      message: `That's a valid point. For ${round.topic}, we should keep the discussion balanced with examples and solutions.`,
+      name: "Moderator",
+      role: "Moderator",
+      personality: "Professional Moderator",
+      message: aiResult.moderatorReply,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    }
+
+    const aiReplies = (aiResult.aiReplies || []).map((ai) => ({
+      speaker: "ai",
+      name: ai.name || "AI Participant",
+      role: ai.role || "AI Participant",
+      personality: ai.personality || "Balanced",
+      message: ai.message || "I agree, and we should keep the discussion balanced.",
       createdAt: new Date(),
       updatedAt: new Date()
     }))
 
-    const updatedMessages = [...(round.messages || []), userMessage, ...aiReplies]
+    const updatedMessages = [
+      ...(round.messages || []),
+      userMessage,
+      moderatorMessage,
+      ...aiReplies
+    ]
 
     await LiveGDRound.collection.updateOne(
       { _id: objectId },
@@ -873,14 +1022,15 @@ router.post("/speak", async (req, res) => {
       success: true,
       messages: updatedMessages,
       userMessage,
-      aiReplies,
+      aiReplies: [moderatorMessage, ...aiReplies],
       userEvaluation: {
-        communicationScore: 65,
-        contentScore: 65,
-        leadershipScore: 60,
-        confidenceScore: 65,
-        relevanceScore: 65,
+        communicationScore: clampScore(aiResult.evaluation?.communicationScore || 65),
+        contentScore: clampScore(aiResult.evaluation?.contentScore || 65),
+        leadershipScore: clampScore(aiResult.evaluation?.leadershipScore || 60),
+        confidenceScore: clampScore(aiResult.evaluation?.confidenceScore || 65),
+        relevanceScore: clampScore(aiResult.evaluation?.relevanceScore || 65),
         feedback:
+          aiResult.evaluation?.feedback ||
           "Good participation. Try to add examples and respond to other speakers directly."
       },
       aiParticipants: round.aiParticipants || []
@@ -889,7 +1039,7 @@ router.post("/speak", async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Live GD speak failed",
-      error: error.message
+      error: process.env.NODE_ENV === "production" ? undefined : error.message
     })
   }
 })
@@ -966,6 +1116,104 @@ router.post("/finish", async (req, res) => {
     })
   }
 })
+
+
+router.post("/rejoin-room", async (req, res) => {
+  try {
+    const { roundId, inviteCode, userId, name = "Participant", email = "" } =
+      req.body || {}
+
+    const cleanCode = normalizeMeetingCode(inviteCode)
+
+    const query = []
+
+    if (roundId && mongoose.Types.ObjectId.isValid(roundId)) {
+      query.push({ _id: new mongoose.Types.ObjectId(roundId) })
+    }
+
+    if (cleanCode) {
+      query.push({ meetingCode: cleanCode }, { inviteCode: cleanCode })
+    }
+
+    if (!query.length) {
+      return res.status(400).json({
+        success: false,
+        message: "Previous meeting code or room ID is required"
+      })
+    }
+
+    const round = await LiveGDRound.collection.findOne({
+      $or: query,
+      completed: false,
+      meetingStatus: { $ne: "ended" }
+    })
+
+    if (!round) {
+      return res.status(404).json({
+        success: false,
+        message: "Previous GD meeting was not found or has ended"
+      })
+    }
+
+    const participantIndex = (round.participants || []).findIndex((p) => {
+      if (userId && p.userId) return p.userId.toString() === userId
+      return email && p.email === email
+    })
+
+    if (participantIndex === -1) {
+      return res.status(403).json({
+        success: false,
+        message: "You were not previously admitted. Please request to join."
+      })
+    }
+
+    const updatedParticipants = [...(round.participants || [])]
+    updatedParticipants[participantIndex] = {
+      ...updatedParticipants[participantIndex],
+      name: name || updatedParticipants[participantIndex].name,
+      email: email || updatedParticipants[participantIndex].email,
+      approved: true,
+      status: "approved",
+      connected: true,
+      micReady: true,
+      cameraReady: true,
+      micOn: true,
+      cameraOn: true,
+      joinedAt: updatedParticipants[participantIndex].joinedAt || new Date(),
+      lastSeenAt: new Date()
+    }
+
+    await LiveGDRound.collection.updateOne(
+      { _id: round._id },
+      {
+        $set: {
+          participants: updatedParticipants,
+          updatedAt: new Date()
+        }
+      }
+    )
+
+    const updatedRound = await LiveGDRound.collection.findOne({
+      _id: round._id
+    })
+
+    return res.json({
+      success: true,
+      isHost: Boolean(updatedParticipants[participantIndex].isHost),
+      round: {
+        ...updatedRound,
+        _id: updatedRound._id.toString()
+      }
+    })
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Unable to rejoin GD meeting",
+      error: process.env.NODE_ENV === "production" ? undefined : error.message
+    })
+  }
+})
+
 
 router.get("/history/:userId", async (req, res) => {
   try {

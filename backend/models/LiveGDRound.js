@@ -35,14 +35,26 @@ const participantSchema = new mongoose.Schema(
       type: Boolean,
       default: false
     },
+    micOn: {
+      type: Boolean,
+      default: true
+    },
+    cameraOn: {
+      type: Boolean,
+      default: true
+    },
     approved: {
       type: Boolean,
       default: true
     },
     status: {
       type: String,
-      enum: ["pending", "approved", "rejected"],
+      enum: ["pending", "approved", "rejected", "disconnected"],
       default: "approved"
+    },
+    connected: {
+      type: Boolean,
+      default: true
     },
     joinedAt: {
       type: Date,
@@ -51,6 +63,14 @@ const participantSchema = new mongoose.Schema(
     requestedAt: {
       type: Date,
       default: Date.now
+    },
+    lastSeenAt: {
+      type: Date,
+      default: null
+    },
+    disconnectedAt: {
+      type: Date,
+      default: null
     }
   },
   { _id: false }
@@ -116,33 +136,27 @@ const liveGDRoundSchema = new mongoose.Schema(
       ref: "User",
       default: null
     },
-
     hostId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       default: null
     },
-
     hostName: {
       type: String,
       default: ""
     },
-
     topic: {
       type: String,
       default: "Impact of AI on Jobs"
     },
-
     difficulty: {
       type: String,
       default: "Beginner"
     },
-
     company: {
       type: String,
       default: "General"
     },
-
     inviteCode: {
       type: String,
       unique: true,
@@ -150,7 +164,6 @@ const liveGDRoundSchema = new mongoose.Schema(
       index: true,
       default: null
     },
-
     meetingCode: {
       type: String,
       unique: true,
@@ -158,119 +171,112 @@ const liveGDRoundSchema = new mongoose.Schema(
       index: true,
       default: null
     },
-
     inviteLink: {
       type: String,
       default: ""
     },
-
     isMultiplayer: {
       type: Boolean,
       default: true
     },
-
     maxParticipants: {
       type: Number,
       default: 5
     },
-
     status: {
       type: String,
       enum: ["waiting", "active", "completed"],
       default: "waiting"
     },
-
     meetingStatus: {
       type: String,
       enum: ["waiting", "live", "ended"],
       default: "waiting"
     },
-
     hostSocketId: {
       type: String,
       default: ""
     },
-
     participants: {
       type: [participantSchema],
       default: []
     },
-
     pendingParticipants: {
       type: [participantSchema],
       default: []
     },
-
     aiParticipants: {
       type: [aiParticipantSchema],
       default: []
     },
-
     messages: {
       type: [liveGDMessageSchema],
       default: []
     },
-
     transcript: {
       type: String,
       default: ""
     },
-
     communicationScore: {
       type: Number,
       default: 0
     },
-
     contentScore: {
       type: Number,
       default: 0
     },
-
     leadershipScore: {
       type: Number,
       default: 0
     },
-
     confidenceScore: {
       type: Number,
       default: 0
     },
-
+    criticalThinkingScore: {
+      type: Number,
+      default: 0
+    },
+    teamworkScore: {
+      type: Number,
+      default: 0
+    },
+    argumentStrengthScore: {
+      type: Number,
+      default: 0
+    },
     overallScore: {
       type: Number,
       default: 0
     },
-
+    recruiterVerdict: {
+      type: String,
+      default: ""
+    },
     feedback: {
       type: String,
       default: ""
     },
-
     strengths: {
       type: [String],
       default: []
     },
-
     weaknesses: {
       type: [String],
       default: []
     },
-
     improvedResponse: {
       type: String,
       default: ""
     },
-
     completed: {
       type: Boolean,
       default: false
     },
-
     startedAt: {
       type: Date,
       default: null
     },
-
     endedAt: {
       type: Date,
       default: null
@@ -278,6 +284,12 @@ const liveGDRoundSchema = new mongoose.Schema(
   },
   { timestamps: true }
 )
+
+liveGDRoundSchema.index({ meetingCode: 1 })
+liveGDRoundSchema.index({ inviteCode: 1 })
+liveGDRoundSchema.index({ userId: 1, createdAt: -1 })
+liveGDRoundSchema.index({ "participants.userId": 1, createdAt: -1 })
+liveGDRoundSchema.index({ "participants.email": 1, createdAt: -1 })
 
 const LiveGDRound =
   mongoose.models.LiveGDRound ||

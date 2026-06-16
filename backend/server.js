@@ -8,6 +8,8 @@ import http from "http"
 import passport from "passport"
 import { Server } from "socket.io"
 
+import logger from "./utils/logger.js"
+
 const { default: authRoutes } = await import("./routes/authRoutes.js")
 const { default: oauthRoutes } = await import("./routes/oauthRoutes.js")
 const { default: interviewRoutes } = await import("./routes/interviewRoutes.js")
@@ -47,71 +49,76 @@ const CLIENT_URL =
 
 const MONGO_URI = process.env.MONGO_URI?.trim()
 
-console.log("GROQ API:", process.env.GROQ_API_KEY ? "Loaded" : "Missing")
-console.log(
+const allowedOrigins = [
+  CLIENT_URL,
+  process.env.FRONTEND_URL,
+  process.env.CLIENT_URL,
+  "http://localhost:5173",
+  "http://localhost:3000"
+].filter(Boolean)
+
+const corsOptions = {
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true)
+      return
+    }
+
+    callback(new Error(`CORS blocked origin: ${origin}`))
+  },
+  credentials: true
+}
+
+logger.info("GROQ API:", process.env.GROQ_API_KEY ? "Loaded" : "Missing")
+logger.info(
   "PISTON URL:",
   process.env.PISTON_URL || "http://localhost:2000/api/v2/execute"
 )
-console.log(
+logger.info(
   "Google OAuth:",
   process.env.GOOGLE_CLIENT_ID?.trim() &&
     process.env.GOOGLE_CLIENT_SECRET?.trim()
     ? "Loaded"
     : "Missing"
 )
-console.log(
+logger.info(
   "Support Email:",
   process.env.SUPPORT_EMAIL && process.env.SUPPORT_EMAIL_PASSWORD
     ? "Loaded"
     : "Missing"
 )
-console.log("Mongo URI:", MONGO_URI ? "Loaded" : "Missing")
-console.log("Client URL:", CLIENT_URL)
+logger.info("Mongo URI:", MONGO_URI ? "Loaded" : "Missing")
+logger.info("Client URL:", CLIENT_URL)
 
-app.use(
-  cors({
-    origin: CLIENT_URL,
-    credentials: true
-  })
-)
-
+app.use(cors(corsOptions))
 app.use(express.json({ limit: "100mb" }))
 app.use(express.urlencoded({ extended: true, limit: "100mb" }))
-
 app.use(passport.initialize())
 
 const io = new Server(server, {
   cors: {
-    origin: CLIENT_URL,
+    origin: allowedOrigins,
     methods: ["GET", "POST"],
     credentials: true
-  }
+  },
+  pingTimeout: 60000,
+  pingInterval: 25000
 })
 
 setupLiveGDSocket(io)
 
 if (!MONGO_URI) {
-  console.log("MongoDB Error: MONGO_URI is missing in environment variables")
+  logger.error("MongoDB Error: MONGO_URI is missing in environment variables")
 } else {
   mongoose
     .connect(MONGO_URI, {
       serverSelectionTimeoutMS: 15000
     })
     .then(() => {
-      console.log("MongoDB Connected")
+      logger.info("MongoDB Connected")
     })
     .catch((error) => {
-      console.log("MongoDB Connection Failed")
-      console.log("MongoDB Error Name:", error.name)
-      console.log("MongoDB Error Message:", error.message)
-
-      if (error.reason) {
-        console.log("MongoDB Error Reason:", error.reason)
-      }
-
-      if (error.code) {
-        console.log("MongoDB Error Code:", error.code)
-      }
+      logger.error("MongoDB Connection Failed", error.message)
     })
 }
 
@@ -161,38 +168,10 @@ app.get("/api/support/test", (req, res) => {
   })
 })
 
-app.get("/api/certificate/test", (req, res) => {
-  res.json({
-    success: true,
-    message: "Certificate route working"
-  })
-})
-
-app.get("/api/recruiter-report/test", (req, res) => {
-  res.json({
-    success: true,
-    message: "Recruiter report route working"
-  })
-})
-
-app.get("/api/gd-round/test", (req, res) => {
-  res.json({
-    success: true,
-    message: "GD round route working"
-  })
-})
-
 app.get("/api/live-gd-round/test", (req, res) => {
   res.json({
     success: true,
     message: "Live GD round route working"
-  })
-})
-
-app.get("/api/avatar-assistant/test", (req, res) => {
-  res.json({
-    success: true,
-    message: "Avatar assistant route working"
   })
 })
 
@@ -233,15 +212,17 @@ app.use((req, res) => {
 })
 
 app.use((error, req, res, next) => {
-  console.log("Server Error:", error)
+  logger.error("Server Error:", error.message)
 
   res.status(500).json({
     success: false,
-    message: "Internal server error",
-    error: error.message
+    message:
+      process.env.NODE_ENV === "production"
+        ? "Internal server error"
+        : error.message
   })
 })
 
-server.listen(PORT, () => {
-  console.log(`Placiora AI Backend Running On Port ${PORT}`)
+server.listen(PORT, "0.0.0.0", () => {
+  logger.info(`Placiora AI Backend Running On Port ${PORT}`)
 })

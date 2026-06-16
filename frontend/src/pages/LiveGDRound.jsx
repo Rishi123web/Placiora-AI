@@ -122,6 +122,7 @@ function LiveGDRound() {
   const [remoteStreams, setRemoteStreams] = useState([])
   const [micOn, setMicOn] = useState(true)
   const [cameraOn, setCameraOn] = useState(true)
+  const [lastRoom, setLastRoom] = useState(null)
 
   const videoRef = useRef(null)
   const socketRef = useRef(null)
@@ -294,6 +295,23 @@ function LiveGDRound() {
     setPendingParticipants(round.pendingParticipants || [])
     setAiParticipants(round.aiParticipants || [])
     setStarted(round.meetingStatus === "live")
+
+    if (id && code) {
+      const savedRoom = {
+        roundId: id,
+        meetingCode: code,
+        inviteCode: code,
+        inviteLink:
+          round.inviteLink ||
+          `${window.location.origin}/live-gd-round?invite=${code}`,
+        topic: round.topic || "Impact of AI on Jobs",
+        company: round.company || "General",
+        joinedAt: new Date().toISOString()
+      }
+
+      localStorage.setItem("placiora_live_gd_last_room", JSON.stringify(savedRoom))
+      setLastRoom(savedRoom)
+    }
   }
 
   const loadMeetingFromCode = async (code) => {
@@ -495,7 +513,7 @@ function LiveGDRound() {
             applyRoundData(data.round)
             setStarted(data.round.meetingStatus === "live")
           }
-        } catch {
+                } catch {
           setStarted(false)
         }
       } else {
@@ -713,7 +731,7 @@ function LiveGDRound() {
 
       if (mics.length > 0) setSelectedMic(mics[0].deviceId)
       if (cameras.length > 0) setSelectedCamera(cameras[0].deviceId)
-    } catch {
+    } catch  {
       setError("Device permission failed. Please allow camera and microphone.")
     }
   }
@@ -730,7 +748,7 @@ function LiveGDRound() {
       if (data.success && Array.isArray(data.companies)) {
         setCompanies(data.companies)
       }
-    } catch {
+    } catch  {
       setCompanies(DEFAULT_COMPANIES)
     }
   }
@@ -788,7 +806,7 @@ function LiveGDRound() {
 
       updateMicLevel()
       setTimeout(() => emitDeviceReady(), 300)
-    } catch {
+    } catch  {
       setDeviceReady(false)
       setCameraStatus("Failed")
       setError("Device test failed. Please check camera and mic permission.")
@@ -799,6 +817,15 @@ function LiveGDRound() {
     const initializePage = async () => {
       await initializeDevices()
       await loadCompanies()
+
+      const savedRoom = localStorage.getItem("placiora_live_gd_last_room")
+      if (savedRoom) {
+        try {
+          setLastRoom(JSON.parse(savedRoom))
+        } catch  {
+          localStorage.removeItem("placiora_live_gd_last_room")
+        }
+      }
 
       const params = new URLSearchParams(window.location.search)
       const code = params.get("invite")
@@ -894,6 +921,77 @@ function LiveGDRound() {
       })
   }
 
+
+  const rejoinLastRoom = async () => {
+    if (!deviceReady) {
+      setError("Please test your camera and microphone before rejoining.")
+      return
+    }
+
+    try {
+      setLoading(true)
+      setError("")
+      setResult(null)
+      setLiveEvaluation(null)
+
+      const saved = JSON.parse(
+        localStorage.getItem("placiora_live_gd_last_room") || "{}"
+      )
+
+      const code = saved.meetingCode || saved.inviteCode
+
+      if (!code) {
+        throw new Error("No previous GD meeting found.")
+      }
+
+      const meeting = await loadMeetingFromCode(code)
+
+      if (!meeting?._id) {
+        throw new Error("Previous meeting was not found or has ended.")
+      }
+
+      const res = await fetch(`${API_URL}/rejoin-room`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          roundId: meeting._id,
+          inviteCode: code,
+          userId,
+          name: userName,
+          email: userEmail
+        })
+      })
+
+      const data = await res.json()
+
+      if (!res.ok || !data.success) {
+        throw new Error(data.message || "Could not rejoin meeting.")
+      }
+
+      const round = data.round || meeting
+
+      applyRoundData(round)
+      setIsHost(Boolean(data.isHost))
+      setWaitingApproval(false)
+      setRejected(false)
+      setRoomReady(true)
+      setStarted(round.meetingStatus === "live")
+
+      connectSocket(round._id, Boolean(data.isHost))
+
+      setTimeout(() => {
+        attachStreamToVideo()
+        emitDeviceReady(round._id)
+      }, 700)
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
   const createRoom = async () => {
     if (!deviceReady) {
       setError("Please test your camera and microphone before starting GD.")
@@ -924,8 +1022,6 @@ function LiveGDRound() {
       })
 
       const data = await res.json()
-      console.log("CREATE ROOM RESPONSE:", data)
-
       if (!res.ok || !data.success) {
         throw new Error(data.message || "Room creation failed")
       }
@@ -941,7 +1037,6 @@ function LiveGDRound() {
         ""
 
       if (!newRoundId || !code) {
-        console.log("BAD CREATE ROOM RESPONSE:", data)
         throw new Error("Meeting code was not generated by backend.")
       }
 
@@ -972,7 +1067,9 @@ function LiveGDRound() {
         socketRef.current?.emit("live-gd-device-ready", {
           roomId: newRoundId,
           micReady: true,
-          cameraReady: true
+          cameraReady: true,
+          micOn,
+          cameraOn
         })
       }, 500)
 
@@ -1065,7 +1162,9 @@ function LiveGDRound() {
         socketRef.current?.emit("live-gd-device-ready", {
           roomId: room._id,
           micReady: true,
-          cameraReady: true
+          cameraReady: true,
+          micOn,
+          cameraOn
         })
       }, 500)
     } catch (err) {
@@ -1163,7 +1262,7 @@ function LiveGDRound() {
     try {
       await navigator.clipboard.writeText(linkToCopy)
       speakText("Meeting link copied.", "Moderator")
-    } catch {
+    } catch  {
       setError("Could not copy meeting link.")
     }
   }
@@ -1179,7 +1278,7 @@ function LiveGDRound() {
     try {
       await navigator.clipboard.writeText(code)
       speakText("Meeting code copied.", "Moderator")
-    } catch {
+    } catch  {
       setError("Could not copy meeting code.")
     }
   }
@@ -1288,7 +1387,7 @@ function LiveGDRound() {
 
       recorder.start()
       setRecording(true)
-    } catch {
+    } catch  {
       setError("Microphone recording failed. Please allow mic access.")
       setRecording(false)
     }
@@ -1607,6 +1706,43 @@ function LiveGDRound() {
               speakText={speakText}
               onMouseMove={handleMouseMove}
             />
+
+
+            {lastRoom && !hasInviteFromUrl && !rejected && (
+              <section
+                onMouseMove={handleMouseMove}
+                className="glow-card rounded-[2.3rem] p-6 border border-emerald-400/20 bg-emerald-500/10"
+              >
+                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                  <div>
+                    <div className="inline-flex items-center gap-2 text-emerald-300 mb-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-400/20 text-xs font-semibold">
+                      <Clock size={14} />
+                      Saved Session
+                    </div>
+
+                    <h2 className="text-2xl font-bold text-white">
+                      Rejoin Previous GD Meeting
+                    </h2>
+
+                    <p className="text-slate-400 mt-1">
+                      {lastRoom.topic} · Code:{" "}
+                      <span className="text-emerald-300 font-bold">
+                        {lastRoom.meetingCode}
+                      </span>
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={rejoinLastRoom}
+                    disabled={loading || !deviceReady}
+                    className="rounded-2xl bg-emerald-600 hover:bg-emerald-700 px-8 py-4 font-semibold text-white disabled:opacity-50"
+                  >
+                    {loading ? "Rejoining..." : "Rejoin Meeting"}
+                  </button>
+                </div>
+              </section>
+            )}
 
             {!hasInviteFromUrl && !rejected && (
               <section
