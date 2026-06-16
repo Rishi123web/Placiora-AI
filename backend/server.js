@@ -93,6 +93,7 @@ logger.info("Client URL:", CLIENT_URL)
 app.use(cors(corsOptions))
 app.use(express.json({ limit: "100mb" }))
 app.use(express.urlencoded({ extended: true, limit: "100mb" }))
+app.use("/uploads", express.static("uploads"))
 app.use(passport.initialize())
 
 const io = new Server(server, {

@@ -34,7 +34,9 @@ import {
   Link2,
   KeyRound,
   Bot,
-  PhoneOff
+  PhoneOff,
+  Download,
+  FileText
 } from "lucide-react"
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:5000"
@@ -123,6 +125,8 @@ function LiveGDRound() {
   const [micOn, setMicOn] = useState(true)
   const [cameraOn, setCameraOn] = useState(true)
   const [lastRoom, setLastRoom] = useState(null)
+  const [meetingRecording, setMeetingRecording] = useState(false)
+  const [recordingUrl, setRecordingUrl] = useState("")
 
   const videoRef = useRef(null)
   const socketRef = useRef(null)
@@ -137,6 +141,9 @@ function LiveGDRound() {
   const remoteStreamsRef = useRef({})
   const roundIdRef = useRef("")
   const participantsRef = useRef([])
+  const meetingRecorderRef = useRef(null)
+  const meetingRecordingStreamRef = useRef(null)
+  const meetingRecordingChunksRef = useRef([])
 
   const user = JSON.parse(localStorage.getItem("user") || "{}")
   const userId = user?._id || user?.id || ""
@@ -181,9 +188,11 @@ function LiveGDRound() {
   const stopStreams = () => {
     previewStreamRef.current?.getTracks().forEach((track) => track.stop())
     recordingStreamRef.current?.getTracks().forEach((track) => track.stop())
+    meetingRecordingStreamRef.current?.getTracks().forEach((track) => track.stop())
 
     previewStreamRef.current = null
     recordingStreamRef.current = null
+    meetingRecordingStreamRef.current = null
 
     if (animationRef.current) {
       cancelAnimationFrame(animationRef.current)
@@ -295,6 +304,7 @@ function LiveGDRound() {
     setPendingParticipants(round.pendingParticipants || [])
     setAiParticipants(round.aiParticipants || [])
     setStarted(round.meetingStatus === "live")
+    setRecordingUrl(round.recordingUrl || "")
 
     if (id && code) {
       const savedRoom = {
@@ -513,7 +523,7 @@ function LiveGDRound() {
             applyRoundData(data.round)
             setStarted(data.round.meetingStatus === "live")
           }
-                } catch {
+        } catch {
           setStarted(false)
         }
       } else {
@@ -637,7 +647,7 @@ function LiveGDRound() {
         return exists ? prev : [...prev, messageData]
       })
 
-      if (messageData?.speaker === "ai") {
+      if (messageData?.speaker === "ai" && started) {
         speakText(
           `${messageData.name || "AI"} says. ${messageData.message}`,
           messageData.name || "AI"
@@ -731,7 +741,7 @@ function LiveGDRound() {
 
       if (mics.length > 0) setSelectedMic(mics[0].deviceId)
       if (cameras.length > 0) setSelectedCamera(cameras[0].deviceId)
-    } catch  {
+    } catch {
       setError("Device permission failed. Please allow camera and microphone.")
     }
   }
@@ -748,7 +758,7 @@ function LiveGDRound() {
       if (data.success && Array.isArray(data.companies)) {
         setCompanies(data.companies)
       }
-    } catch  {
+    } catch {
       setCompanies(DEFAULT_COMPANIES)
     }
   }
@@ -806,7 +816,7 @@ function LiveGDRound() {
 
       updateMicLevel()
       setTimeout(() => emitDeviceReady(), 300)
-    } catch  {
+    } catch {
       setDeviceReady(false)
       setCameraStatus("Failed")
       setError("Device test failed. Please check camera and mic permission.")
@@ -822,7 +832,7 @@ function LiveGDRound() {
       if (savedRoom) {
         try {
           setLastRoom(JSON.parse(savedRoom))
-        } catch  {
+        } catch {
           localStorage.removeItem("placiora_live_gd_last_room")
         }
       }
@@ -857,140 +867,129 @@ function LiveGDRound() {
   useEffect(() => {
     if (!isHost || !roundId || !roomReady) return
 
-    const interval = setInterval(async () => {
-      try {
-        const res = await fetch(`${API_URL}/room/${roundId}`)
-        const data = await res.json()
-
-        if (data.success && data.round) {
-          setPendingParticipants(data.round.pendingParticipants || [])
-          setParticipants(data.round.participants || [])
-          participantsRef.current = data.round.participants || []
-          setAiParticipants(data.round.aiParticipants || [])
-        }
-      } catch (pollError) {
-        console.log("Live GD waiting room sync failed:", pollError)
-      }
-    }, 2500)
-
-    return () => clearInterval(interval)
-  }, [isHost, roundId, roomReady])
-
-  useEffect(() => {
-    if (!waitingApproval || !roundId || isHost) return
-
-    const interval = setInterval(async () => {
-      try {
-        const res = await fetch(`${API_URL}/room/${roundId}`)
-        const data = await res.json()
-
-        if (data.success && data.round) {
-          const approved = (data.round.participants || []).some((p) => {
-            if (userId && p.userId) return String(p.userId) === String(userId)
-            return userEmail && p.email === userEmail
-          })
-
-          if (approved) {
-            applyRoundData(data.round)
-            setWaitingApproval(false)
-            setRejected(false)
-            setRoomReady(true)
-            setStarted(data.round.meetingStatus === "live")
-
-            setTimeout(() => {
-              attachStreamToVideo()
-              emitDeviceReady(data.round._id)
-            }, 400)
-          }
-        }
-      } catch (err) {
-        console.log("Waiting approval sync failed:", err)
-      }
-    }, 2000)
-
-    return () => clearInterval(interval)
-  }, [waitingApproval, roundId, isHost, userId, userEmail])
-
-  const speakOpeningMessages = (items = []) => {
-    items
-      .filter((item) => item.speaker === "ai")
-      .forEach((item, index) => {
-        setTimeout(() => {
-          speakText(`${item.name || "AI"} says. ${item.message}`, item.name)
-        }, index * 3000)
-      })
-  }
-
-
-  const rejoinLastRoom = async () => {
-    if (!deviceReady) {
-      setError("Please test your camera and microphone before rejoining.")
-      return
-    }
-
+      const interval = setInterval(async () => {
     try {
-      setLoading(true)
-      setError("")
-      setResult(null)
-      setLiveEvaluation(null)
-
-      const saved = JSON.parse(
-        localStorage.getItem("placiora_live_gd_last_room") || "{}"
-      )
-
-      const code = saved.meetingCode || saved.inviteCode
-
-      if (!code) {
-        throw new Error("No previous GD meeting found.")
-      }
-
-      const meeting = await loadMeetingFromCode(code)
-
-      if (!meeting?._id) {
-        throw new Error("Previous meeting was not found or has ended.")
-      }
-
-      const res = await fetch(`${API_URL}/rejoin-room`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          roundId: meeting._id,
-          inviteCode: code,
-          userId,
-          name: userName,
-          email: userEmail
-        })
-      })
-
+      const res = await fetch(`${API_URL}/room/${roundId}`)
       const data = await res.json()
 
-      if (!res.ok || !data.success) {
-        throw new Error(data.message || "Could not rejoin meeting.")
+      if (data.success && data.round) {
+        setPendingParticipants(data.round.pendingParticipants || [])
+        setParticipants(data.round.participants || [])
+        participantsRef.current = data.round.participants || []
+        setAiParticipants(data.round.aiParticipants || [])
       }
-
-      const round = data.round || meeting
-
-      applyRoundData(round)
-      setIsHost(Boolean(data.isHost))
-      setWaitingApproval(false)
-      setRejected(false)
-      setRoomReady(true)
-      setStarted(round.meetingStatus === "live")
-
-      connectSocket(round._id, Boolean(data.isHost))
-
-      setTimeout(() => {
-        attachStreamToVideo()
-        emitDeviceReady(round._id)
-      }, 700)
-    } catch (err) {
-      setError(err.message)
-    } finally {
-      setLoading(false)
+    } catch (pollError) {
+      console.log("Live GD waiting room sync failed:", pollError)
     }
+  }, 2500)
+
+  return () => clearInterval(interval)
+}, [isHost, roundId, roomReady])
+
+useEffect(() => {
+  if (!waitingApproval || !roundId || isHost) return
+
+  const interval = setInterval(async () => {
+    try {
+      const res = await fetch(`${API_URL}/room/${roundId}`)
+      const data = await res.json()
+
+      if (data.success && data.round) {
+        const approved = (data.round.participants || []).some((p) => {
+          if (userId && p.userId) return String(p.userId) === String(userId)
+          return userEmail && p.email === userEmail
+        })
+
+        if (approved) {
+          applyRoundData(data.round)
+          setWaitingApproval(false)
+          setRejected(false)
+          setRoomReady(true)
+          setStarted(data.round.meetingStatus === "live")
+
+          setTimeout(() => {
+            attachStreamToVideo()
+            emitDeviceReady(data.round._id)
+          }, 400)
+        }
+      }
+    } catch (syncError) {
+      console.log("Waiting approval sync failed:", syncError)
+    }
+  }, 2000)
+
+  return () => clearInterval(interval)
+}, [waitingApproval, roundId, isHost, userId, userEmail])
+
+const rejoinLastRoom = async () => {
+  if (!deviceReady) {
+    setError("Please test your camera and microphone before rejoining.")
+    return
   }
+
+  try {
+    setLoading(true)
+    setError("")
+    setResult(null)
+    setLiveEvaluation(null)
+
+    const saved = JSON.parse(
+      localStorage.getItem("placiora_live_gd_last_room") || "{}"
+    )
+
+    const code = saved.meetingCode || saved.inviteCode
+
+    if (!code) {
+      throw new Error("No previous GD meeting found.")
+    }
+
+    const meeting = await loadMeetingFromCode(code)
+
+    if (!meeting?._id) {
+      throw new Error("Previous meeting was not found or has ended.")
+    }
+
+    const res = await fetch(`${API_URL}/rejoin-room`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        roundId: meeting._id,
+        inviteCode: code,
+        userId,
+        name: userName,
+        email: userEmail
+      })
+    })
+
+    const data = await res.json()
+
+    if (!res.ok || !data.success) {
+      throw new Error(data.message || "Could not rejoin meeting.")
+    }
+
+    const round = data.round || meeting
+
+    applyRoundData(round)
+    setIsHost(Boolean(data.isHost))
+    setWaitingApproval(false)
+    setRejected(false)
+    setRoomReady(true)
+    setStarted(round.meetingStatus === "live")
+
+    connectSocket(round._id, Boolean(data.isHost))
+
+    setTimeout(() => {
+      attachStreamToVideo()
+      emitDeviceReady(round._id)
+    }, 700)
+  } catch (err) {
+    setError(err.message || "Failed to rejoin meeting.")
+  } finally {
+    setLoading(false)
+  }
+}
 
   const createRoom = async () => {
     if (!deviceReady) {
@@ -1073,7 +1072,7 @@ function LiveGDRound() {
         })
       }, 500)
 
-      speakOpeningMessages(finalRoom.messages || [])
+      // Opening messages stay visible. AI voice starts only after Start GD.
     } catch (err) {
       setError(err.message)
     } finally {
@@ -1262,7 +1261,7 @@ function LiveGDRound() {
     try {
       await navigator.clipboard.writeText(linkToCopy)
       speakText("Meeting link copied.", "Moderator")
-    } catch  {
+    } catch {
       setError("Could not copy meeting link.")
     }
   }
@@ -1278,7 +1277,7 @@ function LiveGDRound() {
     try {
       await navigator.clipboard.writeText(code)
       speakText("Meeting code copied.", "Moderator")
-    } catch  {
+    } catch {
       setError("Could not copy meeting code.")
     }
   }
@@ -1319,6 +1318,11 @@ function LiveGDRound() {
   }
 
   const startRecording = async () => {
+    if (!started) {
+      setError("GD has not started yet. Please wait for the host to click Start GD.")
+      return
+    }
+
     try {
       setError("")
       chunksRef.current = []
@@ -1380,14 +1384,16 @@ function LiveGDRound() {
           setError(err.message)
         } finally {
           setTranscribing(false)
-          recordingStreamRef.current?.getTracks().forEach((track) => track.stop())
+          recordingStreamRef.current
+            ?.getTracks()
+            .forEach((track) => track.stop())
           recordingStreamRef.current = null
         }
       }
 
       recorder.start()
       setRecording(true)
-    } catch  {
+    } catch {
       setError("Microphone recording failed. Please allow mic access.")
       setRecording(false)
     }
@@ -1401,6 +1407,11 @@ function LiveGDRound() {
   }
 
   const sendMessage = async () => {
+    if (!started) {
+      setError("GD has not started yet. Please wait for the host to click Start GD.")
+      return
+    }
+
     if (!userMessage.trim()) return
 
     if (!roundId) {
@@ -1518,7 +1529,122 @@ function LiveGDRound() {
     }
   }
 
+
+  const uploadMeetingRecording = async (blob) => {
+    if (!roundId || !blob || blob.size === 0) return ""
+
+    const formData = new FormData()
+    formData.append("video", blob, `live-gd-${roundId}.webm`)
+    formData.append("roundId", roundId)
+
+    const res = await fetch(`${API_URL}/upload-recording`, {
+      method: "POST",
+      body: formData
+    })
+
+    const data = await res.json()
+
+    if (!res.ok || !data.success) {
+      throw new Error(data.message || "Recording upload failed")
+    }
+
+    setRecordingUrl(data.recordingUrl || "")
+    return data.recordingUrl || ""
+  }
+
+  const startMeetingRecording = async () => {
+    if (!started) {
+      setError("Start GD first, then recording will capture the live session.")
+      return
+    }
+
+    try {
+      setError("")
+      meetingRecordingChunksRef.current = []
+
+      let stream
+
+      if (navigator.mediaDevices?.getDisplayMedia) {
+        stream = await navigator.mediaDevices.getDisplayMedia({
+          video: {
+            displaySurface: "browser",
+            frameRate: 30
+          },
+          audio: true
+        })
+      } else if (previewStreamRef.current) {
+        stream = previewStreamRef.current
+      } else {
+        throw new Error("Recording is not supported in this browser.")
+      }
+
+      meetingRecordingStreamRef.current = stream
+
+      const mimeType = MediaRecorder.isTypeSupported("video/webm;codecs=vp9,opus")
+        ? "video/webm;codecs=vp9,opus"
+        : MediaRecorder.isTypeSupported("video/webm;codecs=vp8,opus")
+        ? "video/webm;codecs=vp8,opus"
+        : "video/webm"
+
+      const recorder = new MediaRecorder(stream, { mimeType })
+      meetingRecorderRef.current = recorder
+
+      recorder.ondataavailable = (event) => {
+        if (event.data && event.data.size > 0) {
+          meetingRecordingChunksRef.current.push(event.data)
+        }
+      }
+
+      recorder.onstop = async () => {
+        try {
+          const blob = new Blob(meetingRecordingChunksRef.current, {
+            type: mimeType
+          })
+
+          if (blob.size > 0) {
+            const localUrl = URL.createObjectURL(blob)
+            setRecordingUrl(localUrl)
+            await uploadMeetingRecording(blob)
+          }
+        } catch (err) {
+          setError(err.message)
+        } finally {
+          setMeetingRecording(false)
+          meetingRecordingStreamRef.current
+            ?.getTracks()
+            .forEach((track) => track.stop())
+          meetingRecordingStreamRef.current = null
+        }
+      }
+
+      stream.getVideoTracks()[0]?.addEventListener("ended", () => {
+        stopMeetingRecording()
+      })
+
+      recorder.start(1000)
+      setMeetingRecording(true)
+    } catch (err) {
+      setMeetingRecording(false)
+      setError(err.message || "Could not start meeting recording.")
+    }
+  }
+
+  const stopMeetingRecording = () => {
+    if (
+      meetingRecorderRef.current &&
+      meetingRecorderRef.current.state !== "inactive"
+    ) {
+      meetingRecorderRef.current.stop()
+    }
+
+    setMeetingRecording(false)
+  }
+
   const finishGD = async () => {
+    if (meetingRecording) {
+      stopMeetingRecording()
+    }
+
     if (!roundId) {
       setError("Round ID missing.")
       return
@@ -1633,6 +1759,10 @@ function LiveGDRound() {
         stopRecording={stopRecording}
         sendMessage={sendMessage}
         liveEvaluation={liveEvaluation}
+        meetingRecording={meetingRecording}
+        recordingUrl={recordingUrl}
+        startMeetingRecording={startMeetingRecording}
+        stopMeetingRecording={stopMeetingRecording}
       />
     )
   }
@@ -1967,7 +2097,7 @@ function LiveGDRound() {
                   <button
                     type="button"
                     onClick={recording ? stopRecording : startRecording}
-                    disabled={loading || transcribing}
+                    disabled={loading || transcribing || !started}
                     className={`px-5 py-3 rounded-xl font-semibold flex items-center gap-2 text-white disabled:opacity-50 ${
                       recording
                         ? "bg-red-500/80 hover:bg-red-600"
@@ -1985,7 +2115,7 @@ function LiveGDRound() {
                   <button
                     type="button"
                     onClick={sendMessage}
-                    disabled={loading || transcribing || !userMessage.trim()}
+                    disabled={loading || transcribing || !started || !userMessage.trim()}
                     className="px-5 py-3 rounded-xl bg-blue-600 hover:bg-blue-700 font-semibold flex items-center gap-2 disabled:opacity-50 text-white"
                   >
                     <Send size={18} />
@@ -2206,7 +2336,11 @@ function MeetRoom({
   startRecording,
   stopRecording,
   sendMessage,
-  liveEvaluation
+  liveEvaluation,
+  meetingRecording,
+  recordingUrl,
+  startMeetingRecording,
+  stopMeetingRecording
 }) {
   const [sidePanel, setSidePanel] = useState("chat")
 
@@ -2216,24 +2350,33 @@ function MeetRoom({
       ? "grid-cols-1"
       : totalTiles === 2
       ? "grid-cols-1 md:grid-cols-2"
-      : "grid-cols-1 md:grid-cols-2 xl:grid-cols-3"
+      : totalTiles <= 4
+      ? "grid-cols-1 sm:grid-cols-2"
+      : "grid-cols-1 sm:grid-cols-2 xl:grid-cols-3"
+
+  const startedText = started ? "GD Live" : "Waiting for host to start"
+  const startedClass = started ? "text-emerald-300" : "text-yellow-300"
 
   return (
-    <div className="fixed inset-0 z-[9999] bg-[#202124] text-white overflow-hidden">
-      <div className="h-16 px-4 md:px-6 flex items-center justify-between border-b border-white/10 bg-[#202124]">
-        <div>
-          <p className="font-bold text-lg">Placiora Live GD</p>
-          <p className="text-xs text-slate-300">
+    <div className="fixed inset-0 z-[9999] bg-[#020617] text-white overflow-hidden">
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_12%_8%,rgba(34,211,238,0.20),transparent_34%),radial-gradient(circle_at_88%_90%,rgba(147,51,234,0.22),transparent_34%)]" />
+
+      <div className="relative h-16 px-3 sm:px-5 flex items-center justify-between border-b border-cyan-400/10 bg-slate-950/85 backdrop-blur-xl">
+        <div className="min-w-0">
+          <p className="font-black text-base sm:text-lg bg-gradient-to-r from-cyan-300 to-purple-300 bg-clip-text text-transparent truncate">
+            Placiora Live GD
+          </p>
+          <p className="text-[11px] sm:text-xs text-slate-400 truncate">
             Code: {meetingCode || "------"} ·{" "}
-            {started ? "GD Live" : "Waiting to start"}
+            <span className={startedClass}>{startedText}</span>
           </p>
         </div>
 
-        <div className="hidden md:flex items-center gap-2">
+        <div className="flex items-center gap-2">
           <button
             type="button"
             onClick={copyInviteLink}
-            className="px-4 py-2 rounded-full bg-[#3c4043] hover:bg-[#4b4f52] text-sm"
+            className="hidden md:block px-4 py-2 rounded-full bg-white/10 hover:bg-white/15 text-sm"
           >
             Copy Link
           </button>
@@ -2241,27 +2384,51 @@ function MeetRoom({
           <button
             type="button"
             onClick={copyMeetingCode}
-            className="px-4 py-2 rounded-full bg-[#3c4043] hover:bg-[#4b4f52] text-sm"
+            className="hidden md:block px-4 py-2 rounded-full bg-white/10 hover:bg-white/15 text-sm"
           >
             Copy Code
           </button>
+
+          {started && (
+            <button
+              type="button"
+              onClick={meetingRecording ? stopMeetingRecording : startMeetingRecording}
+              className={`hidden md:block px-4 py-2 rounded-full text-sm font-semibold ${
+                meetingRecording
+                  ? "bg-red-500/80 hover:bg-red-600"
+                  : "bg-emerald-500/80 hover:bg-emerald-600"
+              }`}
+            >
+              {meetingRecording ? "Stop Recording" : "Record"}
+            </button>
+          )}
+
+          {recordingUrl && (
+            <a
+              href={recordingUrl}
+              download
+              className="hidden md:block px-4 py-2 rounded-full bg-purple-500/20 hover:bg-purple-500/30 text-purple-200 text-sm font-semibold"
+            >
+              Download Video
+            </a>
+          )}
 
           {isHost && (
             <button
               type="button"
               onClick={startMeeting}
-              disabled={loading}
-              className="px-4 py-2 rounded-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-sm"
+              disabled={loading || started}
+              className="px-4 py-2 rounded-full bg-gradient-to-r from-cyan-500 to-blue-600 hover:opacity-90 text-sm font-semibold disabled:opacity-50"
             >
-              Start GD
+              {started ? "Started" : "Start GD"}
             </button>
           )}
         </div>
       </div>
 
-      <div className="h-[calc(100vh-144px)] grid grid-cols-1 lg:grid-cols-[1fr_360px]">
-        <div className="p-3 md:p-4 overflow-hidden">
-          <div className={`grid ${gridClass} gap-3 h-full`}>
+      <div className="relative h-[calc(100vh-144px)] grid grid-cols-1 xl:grid-cols-[1fr_400px]">
+        <main className="p-2 sm:p-4 overflow-hidden">
+          <div className={`grid ${gridClass} gap-3 sm:gap-4 h-full`}>
             <MeetVideoTile
               name={`${userName}${isHost ? " (Host)" : ""}`}
               streamRef={videoRef}
@@ -2270,6 +2437,7 @@ function MeetRoom({
               cameraOn={cameraOn}
               micLevel={micLevel}
               isLocal
+              isHost={isHost}
             />
 
             {remoteStreams.map((remote) => (
@@ -2277,42 +2445,32 @@ function MeetRoom({
             ))}
 
             {remoteStreams.length === 0 && (
-              <div className="hidden md:flex rounded-xl bg-[#2b2c2f] border border-white/10 items-center justify-center text-center p-6">
+              <div className="rounded-3xl border border-cyan-400/10 bg-slate-900/70 backdrop-blur-xl flex items-center justify-center text-center p-6 sm:p-8">
                 <div>
-                  <Users size={42} className="mx-auto mb-3 text-slate-400" />
-                  <p className="text-slate-300 font-semibold">
+                  <div className="w-16 h-16 sm:w-20 sm:h-20 mx-auto rounded-3xl bg-cyan-500/10 border border-cyan-400/20 flex items-center justify-center mb-4 shadow-[0_0_40px_rgba(34,211,238,0.2)]">
+                    <Users size={34} className="text-cyan-300" />
+                  </div>
+
+                  <h3 className="text-lg sm:text-xl font-black text-white">
                     Waiting for admitted participants
+                  </h3>
+
+                  <p className="text-sm text-slate-400 mt-2 max-w-md mx-auto">
+                    Every admitted participant gets this same room, video grid,
+                    speech transcription, chat, AI replies and people panel.
                   </p>
-                  <p className="text-xs text-slate-500 mt-2 break-all">
+
+                  <p className="text-xs text-cyan-300 mt-4 break-all">
                     {inviteLink}
                   </p>
                 </div>
               </div>
             )}
           </div>
-        </div>
+        </main>
 
-        <div className="hidden lg:flex flex-col border-l border-white/10 bg-[#1f2023]">
-          <div className="flex border-b border-white/10">
-            <button
-              type="button"
-              onClick={() => setSidePanel("chat")}
-              className={`flex-1 py-3 text-sm ${
-                sidePanel === "chat" ? "bg-white/10" : ""
-              }`}
-            >
-              Chat
-            </button>
-            <button
-              type="button"
-              onClick={() => setSidePanel("people")}
-              className={`flex-1 py-3 text-sm ${
-                sidePanel === "people" ? "bg-white/10" : ""
-              }`}
-            >
-              People
-            </button>
-          </div>
+        <aside className="hidden xl:flex flex-col border-l border-cyan-400/10 bg-slate-950/80 backdrop-blur-xl min-h-0">
+          <PanelTabs sidePanel={sidePanel} setSidePanel={setSidePanel} />
 
           {sidePanel === "chat" ? (
             <MeetChatPanel
@@ -2323,6 +2481,7 @@ function MeetRoom({
               recording={recording}
               transcribing={transcribing}
               loading={loading}
+              started={started}
               startRecording={startRecording}
               stopRecording={stopRecording}
               sendMessage={sendMessage}
@@ -2335,29 +2494,42 @@ function MeetRoom({
               pendingParticipants={pendingParticipants}
               admitParticipant={admitParticipant}
               rejectParticipant={rejectParticipant}
+              started={started}
             />
           )}
-        </div>
+        </aside>
       </div>
 
-      {liveEvaluation && (
-        <div className="hidden md:block absolute left-5 bottom-24 rounded-xl bg-black/60 backdrop-blur border border-emerald-400/20 p-3 max-w-xl">
-          <p className="text-emerald-300 font-semibold text-sm">
-            Live Feedback
+      {!started && (
+        <div className="hidden md:block absolute left-5 bottom-24 rounded-2xl bg-yellow-500/10 backdrop-blur-xl border border-yellow-400/20 p-4 max-w-xl">
+          <p className="text-yellow-300 font-bold text-sm">
+            Waiting for GD Start
           </p>
-          <p className="text-xs text-slate-200 mt-1">
+          <p className="text-xs text-slate-200 mt-1 leading-6">
+            AI voice, participant scoring and transcription submission activate
+            only after the host clicks Start GD.
+          </p>
+        </div>
+      )}
+
+      {liveEvaluation && started && (
+        <div className="hidden md:block absolute left-5 bottom-24 rounded-2xl bg-emerald-500/10 backdrop-blur-xl border border-emerald-400/20 p-4 max-w-xl shadow-[0_0_50px_rgba(16,185,129,0.12)]">
+          <p className="text-emerald-300 font-bold text-sm">
+            Live Recruiter Feedback
+          </p>
+          <p className="text-xs text-slate-200 mt-1 leading-6">
             {liveEvaluation.feedback ||
               "Good participation. Add examples and respond to others."}
           </p>
         </div>
       )}
 
-      <div className="h-20 px-4 flex items-center justify-center gap-4 border-t border-white/10 bg-[#202124]">
+      <div className="relative h-20 px-3 flex items-center justify-center gap-3 sm:gap-4 border-t border-cyan-400/10 bg-slate-950/90 backdrop-blur-xl">
         <button
           type="button"
           onClick={toggleMic}
-          className={`w-12 h-12 rounded-full flex items-center justify-center ${
-            micOn ? "bg-[#3c4043] hover:bg-[#4b4f52]" : "bg-red-600"
+          className={`w-12 h-12 rounded-full flex items-center justify-center shadow-lg ${
+            micOn ? "bg-white/10 hover:bg-white/15" : "bg-red-600"
           }`}
         >
           {micOn ? <Mic size={22} /> : <MicOff size={22} />}
@@ -2366,19 +2538,50 @@ function MeetRoom({
         <button
           type="button"
           onClick={toggleCamera}
-          className={`w-12 h-12 rounded-full flex items-center justify-center ${
-            cameraOn ? "bg-[#3c4043] hover:bg-[#4b4f52]" : "bg-red-600"
+          className={`w-12 h-12 rounded-full flex items-center justify-center shadow-lg ${
+            cameraOn ? "bg-white/10 hover:bg-white/15" : "bg-red-600"
           }`}
         >
           {cameraOn ? <Video size={22} /> : <VideoOff size={22} />}
         </button>
 
+        <button
+          type="button"
+          onClick={() => setSidePanel(sidePanel === "chat" ? "people" : "chat")}
+          className="xl:hidden w-12 h-12 rounded-full bg-white/10 hover:bg-white/15 flex items-center justify-center"
+        >
+          {sidePanel === "chat" ? <Users size={22} /> : <MessageCircle size={22} />}
+        </button>
+
+        {started && (
+          <button
+            type="button"
+            onClick={meetingRecording ? stopMeetingRecording : startMeetingRecording}
+            className={`hidden sm:flex px-4 h-12 rounded-full font-bold items-center gap-2 ${
+              meetingRecording ? "bg-red-600" : "bg-emerald-600"
+            }`}
+          >
+            {meetingRecording ? "Stop Rec" : "Record"}
+          </button>
+        )}
+
+        {recordingUrl && (
+          <a
+            href={recordingUrl}
+            download
+            className="hidden sm:flex px-4 h-12 rounded-full bg-purple-600 hover:bg-purple-700 font-bold items-center gap-2"
+          >
+            <Download size={18} />
+            Video
+          </a>
+        )}
+
         {isHost && (
           <button
             type="button"
             onClick={finishGD}
-            disabled={loading}
-            className="px-5 h-12 rounded-full bg-red-600 hover:bg-red-700 font-semibold disabled:opacity-50"
+            disabled={loading || !started}
+            className="px-4 sm:px-6 h-12 rounded-full bg-gradient-to-r from-red-500 to-rose-700 font-bold disabled:opacity-50"
           >
             End
           </button>
@@ -2392,6 +2595,66 @@ function MeetRoom({
           <PhoneOff size={22} />
         </button>
       </div>
+
+      <div className="xl:hidden absolute right-3 top-20 bottom-24 w-[min(430px,calc(100vw-24px))] rounded-3xl border border-cyan-400/10 bg-slate-950/95 backdrop-blur-xl overflow-hidden shadow-2xl">
+        <PanelTabs sidePanel={sidePanel} setSidePanel={setSidePanel} />
+
+        {sidePanel === "chat" ? (
+          <MeetChatPanel
+            messages={messages}
+            userName={userNameForChat}
+            userMessage={userMessage}
+            setUserMessage={setUserMessage}
+            recording={recording}
+            transcribing={transcribing}
+            loading={loading}
+            started={started}
+            startRecording={startRecording}
+            stopRecording={stopRecording}
+            sendMessage={sendMessage}
+          />
+        ) : (
+          <MeetPeoplePanel
+            isHost={isHost}
+            participants={participants}
+            aiParticipants={aiParticipants}
+            pendingParticipants={pendingParticipants}
+            admitParticipant={admitParticipant}
+            rejectParticipant={rejectParticipant}
+            started={started}
+          />
+        )}
+      </div>
+    </div>
+  )
+}
+
+function PanelTabs({ sidePanel, setSidePanel }) {
+  return (
+    <div className="grid grid-cols-2 border-b border-white/10">
+      <button
+        type="button"
+        onClick={() => setSidePanel("chat")}
+        className={`py-3 sm:py-4 text-sm font-semibold ${
+          sidePanel === "chat"
+            ? "bg-cyan-500/10 text-cyan-300"
+            : "text-slate-400"
+        }`}
+      >
+        Discussion
+      </button>
+
+      <button
+        type="button"
+        onClick={() => setSidePanel("people")}
+        className={`py-3 sm:py-4 text-sm font-semibold ${
+          sidePanel === "people"
+            ? "bg-purple-500/10 text-purple-300"
+            : "text-slate-400"
+        }`}
+      >
+        People
+      </button>
     </div>
   )
 }
@@ -2477,6 +2740,7 @@ function MeetChatPanel({
   recording,
   transcribing,
   loading,
+  started,
   startRecording,
   stopRecording,
   sendMessage
@@ -2510,7 +2774,7 @@ function MeetChatPanel({
         <textarea
           value={userMessage}
           onChange={(e) => setUserMessage(e.target.value)}
-          placeholder="Speak or type your GD point..."
+          placeholder={started ? "Speak or type your GD point..." : "Waiting for host to start GD..."}
           className="w-full h-24 rounded-xl bg-[#202124] border border-white/10 p-3 text-sm outline-none resize-none"
         />
 
@@ -2518,19 +2782,19 @@ function MeetChatPanel({
           <button
             type="button"
             onClick={recording ? stopRecording : startRecording}
-            disabled={loading || transcribing}
+            disabled={loading || transcribing || !started}
             className={`flex-1 rounded-xl py-3 text-sm font-semibold flex items-center justify-center gap-2 ${
               recording ? "bg-red-600" : "bg-emerald-600"
             } disabled:opacity-50`}
           >
             {recording ? <Square size={16} /> : <Mic size={16} />}
-            {recording ? "Stop" : transcribing ? "Transcribing..." : "Speak"}
+            {recording ? "Stop" : transcribing ? "Transcribing..." : started ? "Speak" : "Locked"}
           </button>
 
           <button
             type="button"
             onClick={sendMessage}
-            disabled={loading || transcribing || !userMessage.trim()}
+            disabled={loading || transcribing || !started || !userMessage.trim()}
             className="flex-1 rounded-xl py-3 text-sm font-semibold bg-blue-600 disabled:opacity-50 flex items-center justify-center gap-2"
           >
             <Send size={16} />
@@ -2998,6 +3262,33 @@ function ResultSection({ result }) {
           icon={Target}
         />
       </div>
+
+      {(result.recordingUrl || result.reportReady) && (
+        <div className="rounded-[2rem] border border-purple-400/20 bg-purple-500/10 p-6 mb-8">
+          <h3 className="text-2xl font-bold text-white flex items-center gap-3">
+            <FileText className="text-purple-300" size={26} />
+            Recording & Report
+          </h3>
+
+          <p className="text-slate-300 mt-2">
+            Your Live GD report is saved in history. Download the meeting video
+            if recording was enabled.
+          </p>
+
+          {result.recordingUrl && (
+            <a
+              href={result.recordingUrl}
+              download
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex mt-4 rounded-2xl bg-purple-600 hover:bg-purple-700 px-5 py-3 font-semibold text-white items-center gap-2"
+            >
+              <Download size={18} />
+              Download Recording
+            </a>
+          )}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <ResultBox title="Feedback" text={result.feedback} />

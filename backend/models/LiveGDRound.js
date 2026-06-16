@@ -269,6 +269,26 @@ const liveGDRoundSchema = new mongoose.Schema(
       type: String,
       default: ""
     },
+
+    recordingUrl: {
+      type: String,
+      default: ""
+    },
+
+    recordingFilename: {
+      type: String,
+      default: ""
+    },
+
+    recordingUploadedAt: {
+      type: Date,
+      default: null
+    },
+
+    reportReady: {
+      type: Boolean,
+      default: false
+    },
     completed: {
       type: Boolean,
       default: false
@@ -285,8 +305,6 @@ const liveGDRoundSchema = new mongoose.Schema(
   { timestamps: true }
 )
 
-liveGDRoundSchema.index({ meetingCode: 1 })
-liveGDRoundSchema.index({ inviteCode: 1 })
 liveGDRoundSchema.index({ userId: 1, createdAt: -1 })
 liveGDRoundSchema.index({ "participants.userId": 1, createdAt: -1 })
 liveGDRoundSchema.index({ "participants.email": 1, createdAt: -1 })

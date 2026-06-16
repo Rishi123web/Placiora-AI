@@ -16,7 +16,8 @@ if (!fs.existsSync("uploads")) {
 const storage = multer.diskStorage({
   destination: "uploads/",
   filename: (req, file, cb) => {
-    cb(null, `live-gd-${Date.now()}.webm`)
+    const ext = path.extname(file.originalname || ".webm") || ".webm"
+    cb(null, `live-gd-${Date.now()}${ext}`)
   }
 })
 
@@ -963,6 +964,13 @@ router.post("/speak", async (req, res) => {
       })
     }
 
+    if (round.meetingStatus !== "live") {
+      return res.status(400).json({
+        success: false,
+        message: "GD has not started yet. Please wait for the host to click Start GD."
+      })
+    }
+
     const userMessage = {
       speaker: "user",
       userId,
@@ -1043,6 +1051,61 @@ router.post("/speak", async (req, res) => {
     })
   }
 })
+
+
+router.post("/upload-recording", upload.single("video"), async (req, res) => {
+  try {
+    const { roundId } = req.body || {}
+
+    if (!roundId || !mongoose.Types.ObjectId.isValid(roundId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Valid round ID is required"
+      })
+    }
+
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: "Recording file is required"
+      })
+    }
+
+    const objectId = new mongoose.Types.ObjectId(roundId)
+    const publicUrl = `${req.protocol}://${req.get("host")}/uploads/${req.file.filename}`
+
+    await LiveGDRound.collection.updateOne(
+      { _id: objectId },
+      {
+        $set: {
+          recordingUrl: publicUrl,
+          recordingFilename: req.file.filename,
+          recordingUploadedAt: new Date(),
+          reportReady: true,
+          updatedAt: new Date()
+        }
+      }
+    )
+
+    const round = await LiveGDRound.collection.findOne({ _id: objectId })
+
+    return res.json({
+      success: true,
+      recordingUrl: publicUrl,
+      round: {
+        ...round,
+        _id: round._id.toString()
+      }
+    })
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Recording upload failed",
+      error: process.env.NODE_ENV === "production" ? undefined : error.message
+    })
+  }
+})
+
 
 router.post("/finish", async (req, res) => {
   try {
@@ -1249,5 +1312,56 @@ router.get("/history/:userId", async (req, res) => {
     })
   }
 })
+
+
+router.get("/history-user/:userId", async (req, res) => {
+  try {
+    const { userId } = req.params
+    const email = String(req.query.email || "").trim()
+
+    const query = []
+
+    if (userId && mongoose.Types.ObjectId.isValid(userId)) {
+      const objectId = new mongoose.Types.ObjectId(userId)
+      query.push({ userId: objectId })
+      query.push({ "participants.userId": objectId })
+    }
+
+    if (email) {
+      query.push({ "participants.email": email })
+    }
+
+    if (!query.length) {
+      return res.json({
+        success: true,
+        rounds: []
+      })
+    }
+
+    const rounds = await LiveGDRound.collection
+      .find({ $or: query })
+      .sort({ createdAt: -1 })
+      .limit(50)
+      .toArray()
+
+    return res.json({
+      success: true,
+      rounds: rounds.map((round) => ({
+        ...round,
+        _id: round._id.toString(),
+        recordingUrl: round.recordingUrl || "",
+        reportReady: Boolean(round.reportReady || round.completed),
+        type: "Live GD Round"
+      }))
+    })
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Failed to load Live GD history",
+      error: process.env.NODE_ENV === "production" ? undefined : error.message
+    })
+  }
+})
+
 
 export default router
