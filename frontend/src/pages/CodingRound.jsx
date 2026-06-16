@@ -68,6 +68,7 @@ function CodingRound() {
   const [hints, setHints] = useState([])
   const [result, setResult] = useState(null)
   const [testResults, setTestResults] = useState([])
+  const [customRunResult, setCustomRunResult] = useState(null)
 
   const [loading, setLoading] = useState(false)
   const [running, setRunning] = useState(false)
@@ -88,6 +89,7 @@ function CodingRound() {
         setOutput("")
         setHints([])
         setTestResults([])
+        setCustomRunResult(null)
         setStdin("")
 
         const response = await axios.get(`${API}/problem`, {
@@ -181,14 +183,14 @@ function CodingRound() {
 
   const runCodeAndReturnResults = async () => {
     const tests =
-      stdin.trim() || !problem?.testCases?.length
-        ? [
+      problem?.testCases?.length
+        ? problem.testCases
+        : [
             {
-              input: stdin,
+              input: "",
               expectedOutput: problem?.expectedOutput || ""
             }
           ]
-        : problem.testCases
 
     const allResults = []
     let collectedHints = []
@@ -197,13 +199,13 @@ function CodingRound() {
       const testCase = tests[i]
 
       const runResult = await runOneTest({
-        input: stdin.trim() ? stdin : testCase.input,
+        input: testCase.input,
         expectedOutput: testCase.expectedOutput
       })
 
       allResults.push({
         index: i + 1,
-        input: stdin.trim() ? stdin : testCase.input,
+        input: testCase.input,
         expectedOutput: testCase.expectedOutput,
         actualOutput: runResult.actualOutput || runResult.runtimeError || "",
         runtimeError: runResult.runtimeError,
@@ -234,22 +236,75 @@ function CodingRound() {
       setOutput("")
       setHints([])
       setTestResults([])
+      setCustomRunResult(null)
+
+      if (stdin.trim()) {
+        const response = await axios.post(`${API}/run`, {
+          code,
+          language,
+          stdin,
+          input: stdin
+        })
+
+        const data = response.data
+        const actualOutput = getRunOutput(data)
+        const runtimeError = getRunError(data)
+
+        const customResult = {
+          input: stdin,
+          actualOutput: actualOutput || runtimeError || "",
+          runtimeError,
+          status: data.status?.description || "Executed"
+        }
+
+        setCustomRunResult(customResult)
+
+        setOutput(
+          `Custom Run Output
+Input:
+${stdin}
+
+Output:
+${
+            normalizeOutput(customResult.actualOutput) || "No Output"
+          }${runtimeError ? `
+
+Error:
+${runtimeError}` : ""}`
+        )
+
+        if (Array.isArray(data.hints) && data.hints.length > 0) {
+          setHints(data.hints)
+        }
+
+        return
+      }
 
       const { allResults, collectedHints } = await runCodeAndReturnResults()
 
       const combinedOutput = allResults
-        .map((item) => {
-          const status = item.passed ? "Passed" : "Failed"
+  .map((item) => {
+    const status = item.passed ? "Passed" : "Failed"
+    const actual = normalizeOutput(item.actualOutput) || "No Output"
+    const errorLine = item.runtimeError
+      ? "\nError: " + item.runtimeError
+      : ""
 
-          return `Test Case ${item.index}: ${status}
-Input: ${item.input}
-Expected: ${item.expectedOutput}
-Output: ${normalizeOutput(item.actualOutput) || "No Output"}${
-            item.runtimeError ? `\nError: ${item.runtimeError}` : ""
-          }`
-        })
-        .join("\n\n")
-
+    return (
+      "Test Case " +
+      item.index +
+      ": " +
+      status +
+      "\nInput: " +
+      item.input +
+      "\nExpected: " +
+      item.expectedOutput +
+      "\nOutput: " +
+      actual +
+      errorLine
+    )
+  })
+  .join("\n\n")
       setOutput(combinedOutput || "No Output")
       setTestResults(allResults)
 
@@ -300,10 +355,11 @@ Output: ${normalizeOutput(item.actualOutput) || "No Output"}${
 
       let finalTestResults = testResults
 
-      if (!finalTestResults.length) {
+      if (!finalTestResults.length || customRunResult) {
         const runData = await runCodeAndReturnResults()
         finalTestResults = runData.allResults
         setTestResults(finalTestResults)
+        setCustomRunResult(null)
       }
 
       const user = JSON.parse(localStorage.getItem("user") || "{}")
@@ -334,10 +390,10 @@ Output: ${normalizeOutput(item.actualOutput) || "No Output"}${
 
   return (
     <MainLayout>
-      <div className="max-w-7xl mx-auto space-y-8 page-fade">
+      <div className="max-w-[1600px] mx-auto space-y-8 page-fade">
         <section
           onMouseMove={handleMouseMove}
-          className="glow-card relative overflow-hidden rounded-[3rem] border border-cyan-400/20 bg-slate-950/90 p-8 shadow-[0_0_120px_rgba(34,211,238,0.12)]"
+          className="glow-card relative overflow-hidden rounded-[3rem] border border-cyan-400/20 bg-slate-950/90 p-6 sm:p-8 shadow-[0_0_120px_rgba(34,211,238,0.12)]"
         >
           <div className="absolute -top-32 -right-32 w-[520px] h-[520px] rounded-full bg-cyan-500/20 blur-[140px]" />
           <div className="absolute -bottom-40 -left-40 w-[520px] h-[520px] rounded-full bg-purple-600/20 blur-[140px]" />
@@ -367,7 +423,7 @@ Output: ${normalizeOutput(item.actualOutput) || "No Output"}${
               </div>
             </div>
 
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 w-full lg:w-auto">
               <MiniStat icon={Layers} label="Level" value={difficulty} />
               <MiniStat
                 icon={Cpu}
@@ -388,7 +444,7 @@ Output: ${normalizeOutput(item.actualOutput) || "No Output"}${
 
         <section
           onMouseMove={handleMouseMove}
-          className="glow-card rounded-[2.3rem] border border-cyan-400/10 bg-white/[0.04] backdrop-blur-2xl p-6 hover:border-cyan-300/30"
+          className="glow-card rounded-[2.3rem] border border-cyan-400/10 bg-white/[0.04] backdrop-blur-2xl p-5 sm:p-6 hover:border-cyan-300/30"
         >
           <div className="flex flex-wrap items-center justify-between gap-5">
             <div>
@@ -450,10 +506,10 @@ Output: ${normalizeOutput(item.actualOutput) || "No Output"}${
         </section>
 
         {problem ? (
-          <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 items-start">
+          <div className="grid grid-cols-1 2xl:grid-cols-[minmax(420px,0.9fr)_minmax(520px,1.1fr)] gap-8 items-start">
             <section
               onMouseMove={handleMouseMove}
-              className="glow-card rounded-[2.3rem] border border-cyan-400/10 bg-white/[0.04] backdrop-blur-2xl p-6 hover:border-cyan-300/30"
+              className="glow-card rounded-[2.3rem] border border-cyan-400/10 bg-white/[0.04] backdrop-blur-2xl p-5 sm:p-6 hover:border-cyan-300/30"
             >
               <div className="flex flex-wrap gap-3 mb-5">
                 <Badge text={problem.category || "Programming"} />
@@ -552,6 +608,19 @@ Output: ${normalizeOutput(item.actualOutput) || "No Output"}${
                 </div>
               )}
 
+              {customRunResult && (
+                <div className="mt-8 rounded-[2rem] border border-cyan-400/20 bg-cyan-500/10 p-5">
+                  <h3 className="text-xl font-bold text-cyan-300 mb-3">
+                    Custom Input Run
+                  </h3>
+                  <p className="text-slate-300 leading-7">
+                    This run is only for your custom input. It is not judged
+                    against official test cases. Click Submit to run official
+                    hidden/visible test cases.
+                  </p>
+                </div>
+              )}
+
               {hints.length > 0 && (
                 <div className="mt-8 rounded-[2rem] border border-yellow-400/20 bg-yellow-500/10 p-5">
                   <div className="flex items-center gap-2 text-yellow-300 mb-3">
@@ -595,7 +664,7 @@ Output: ${normalizeOutput(item.actualOutput) || "No Output"}${
 
             <section
               onMouseMove={handleMouseMove}
-              className="glow-card rounded-[2.3rem] border border-cyan-400/10 bg-slate-950/80 p-4 hover:border-cyan-300/30 xl:sticky xl:top-6"
+              className="glow-card rounded-[2.3rem] border border-cyan-400/10 bg-slate-950/80 p-4 hover:border-cyan-300/30 2xl:sticky 2xl:top-24"
             >
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4 px-2">
                 <div>
@@ -634,7 +703,7 @@ Output: ${normalizeOutput(item.actualOutput) || "No Output"}${
 
               <div className="rounded-[2rem] overflow-hidden border border-cyan-400/20 bg-slate-950 shadow-[0_0_50px_rgba(34,211,238,0.12)]">
                 <Editor
-                  height="700px"
+                  height="min(68vh, 720px)"
                   language={selectedMonacoLanguage}
                   theme="vs-dark"
                   value={code}
@@ -659,7 +728,7 @@ Output: ${normalizeOutput(item.actualOutput) || "No Output"}${
                   className="w-full h-28 resize-none rounded-2xl bg-slate-900/80 border border-white/10 px-4 py-3 text-white outline-none focus:border-cyan-400"
                 />
 
-                <p className="text-white font-bold mt-4 mb-2">Output</p>
+                <p className="text-white font-bold mt-4 mb-2">{customRunResult ? "Custom Run Output" : "Output"}</p>
 
                 <pre className="min-h-28 max-h-60 overflow-auto rounded-2xl bg-black/50 border border-white/10 px-4 py-3 text-emerald-300 whitespace-pre-wrap">
                   {output || "Run your code to see output here..."}

@@ -81,10 +81,10 @@ function MockPlacementDrive() {
 
   return (
     <MainLayout>
-      <div className="max-w-7xl mx-auto space-y-8 page-fade">
+      <div className="max-w-[1600px] mx-auto space-y-8 page-fade">
         <section
           onMouseMove={handleMouseMove}
-          className="glow-card relative overflow-hidden rounded-[3rem] border border-cyan-400/20 bg-slate-950/90 p-8 shadow-[0_0_120px_rgba(34,211,238,0.12)]"
+          className="glow-card relative overflow-hidden rounded-[3rem] border border-cyan-400/20 bg-slate-950/90 p-6 sm:p-8 shadow-[0_0_120px_rgba(34,211,238,0.12)]"
         >
           <div className="absolute -top-32 -right-32 w-[520px] h-[520px] rounded-full bg-cyan-500/20 blur-[140px]" />
           <div className="absolute -bottom-40 -left-40 w-[520px] h-[520px] rounded-full bg-purple-600/20 blur-[140px]" />
@@ -113,7 +113,7 @@ function MockPlacementDrive() {
               </div>
             </div>
 
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 w-full lg:w-auto">
               <MiniStat icon={Building2} label="Company" value={company} />
               <MiniStat icon={Briefcase} label="Mode" value="Drive" />
               <MiniStat icon={TrendingUp} label="AI Result" value="Ready" />
@@ -123,7 +123,7 @@ function MockPlacementDrive() {
 
         <section
           onMouseMove={handleMouseMove}
-          className="glow-card relative overflow-hidden rounded-[2.5rem] border border-cyan-400/10 bg-slate-950/70 p-8 hover:border-cyan-300/30"
+          className="glow-card relative overflow-hidden rounded-[2.5rem] border border-cyan-400/10 bg-slate-950/70 p-6 sm:p-8 hover:border-cyan-300/30"
         >
           <div className="absolute inset-0 opacity-0 hover:opacity-100 transition-opacity duration-500 bg-[radial-gradient(circle_at_var(--x)_var(--y),rgba(34,211,238,0.14),transparent_38%)]" />
 
@@ -132,7 +132,7 @@ function MockPlacementDrive() {
               Placement Stages
             </h2>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-5 mb-8">
               <StageCard icon={Brain} title="Aptitude" />
               <StageCard icon={Code2} title="Coding" />
               <StageCard icon={Target} title="Technical" />
@@ -140,7 +140,7 @@ function MockPlacementDrive() {
               <StageCard icon={Users} title="HR Round" />
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
               <select
                 value={company}
                 onChange={(e) => setCompany(e.target.value)}
@@ -196,7 +196,7 @@ function MockPlacementDrive() {
         {result && (
           <section
             onMouseMove={handleMouseMove}
-            className="glow-card relative overflow-hidden rounded-[3rem] border border-emerald-400/20 bg-emerald-500/10 p-10"
+            className="glow-card relative overflow-hidden rounded-[3rem] border border-emerald-400/20 bg-emerald-500/10 p-6 sm:p-10"
           >
             <div className="absolute -top-28 -right-28 w-[420px] h-[420px] rounded-full bg-emerald-400/20 blur-[120px]" />
             <div className="absolute -bottom-28 -left-28 w-[420px] h-[420px] rounded-full bg-cyan-500/20 blur-[120px]" />
@@ -211,7 +211,7 @@ function MockPlacementDrive() {
 
                 <p className="text-slate-400 mt-3">Placement Probability</p>
 
-                <h3 className="text-8xl font-black bg-gradient-to-r from-cyan-300 via-white to-purple-300 bg-clip-text text-transparent mt-3">
+                <h3 className="text-5xl sm:text-7xl lg:text-8xl font-black bg-gradient-to-r from-cyan-300 via-white to-purple-300 bg-clip-text text-transparent mt-3">
                   {result.placementChance || 0}%
                 </h3>
 
@@ -248,7 +248,7 @@ function MockPlacementDrive() {
                 />
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mt-8">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-5 mt-8">
                 <ScoreCard title="Aptitude" score={aptitudeScore} />
                 <ScoreCard title="Coding" score={codingScore} />
                 <ScoreCard title="Technical" score={technicalScore} />
