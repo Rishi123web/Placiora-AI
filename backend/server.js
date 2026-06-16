@@ -224,6 +224,6 @@ app.use((error, req, res, next) => {
   })
 })
 
-server.listen(PORT, "0.0.0.0", () => {
+server.listen(PORT, () => {
   logger.info(`Placiora AI Backend Running On Port ${PORT}`)
 })
