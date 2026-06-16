@@ -94,7 +94,6 @@ function Sidebar({ mobileOpen = false, onClose = () => {} }) {
   const handleMouseMove = (e) => {
     const item = e.currentTarget
     const rect = item.getBoundingClientRect()
-
     item.style.setProperty("--x", `${e.clientX - rect.left}px`)
     item.style.setProperty("--y", `${e.clientY - rect.top}px`)
   }
@@ -105,7 +104,9 @@ function Sidebar({ mobileOpen = false, onClose = () => {} }) {
 
   return (
     <aside
-      className={`fixed lg:sticky top-0 left-0 z-[80] w-[86vw] max-w-[320px] lg:w-[292px] lg:max-w-none h-dvh lg:h-screen bg-[#020617]/95 border-r border-cyan-400/10 flex flex-col overflow-hidden transition-transform duration-300 ease-out ${mobileOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}`}
+      className={`fixed top-0 left-0 z-[80] w-[86vw] max-w-[320px] lg:w-[292px] lg:max-w-none h-dvh lg:h-screen bg-[#020617]/95 border-r border-cyan-400/10 flex flex-col overflow-hidden transition-transform duration-300 ease-out ${
+        mobileOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
+      }`}
     >
       <div className="absolute -top-32 -left-32 w-80 h-80 bg-cyan-500/10 rounded-full blur-3xl" />
       <div className="absolute top-1/3 -right-36 w-80 h-80 bg-blue-600/10 rounded-full blur-3xl" />
@@ -116,7 +117,6 @@ function Sidebar({ mobileOpen = false, onClose = () => {} }) {
           <div className="flex items-center gap-3 min-w-0">
             <div className="relative shrink-0">
               <div className="absolute inset-0 rounded-2xl bg-cyan-400/30 blur-2xl" />
-
               <img
                 src="/prep-logo.png"
                 alt="Placiora AI"
@@ -195,8 +195,6 @@ function Sidebar({ mobileOpen = false, onClose = () => {} }) {
           onMouseMove={handleMouseMove}
           className="group relative overflow-hidden rounded-3xl border border-white/10 bg-white/[0.04] p-3 sm:p-4"
         >
-          <div className="pointer-events-none absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 bg-[radial-gradient(circle_at_var(--x)_var(--y),rgba(34,211,238,0.18),transparent_40%)]" />
-
           <div className="relative z-10 flex items-center gap-3 mb-3 sm:mb-4">
             <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl bg-gradient-to-br from-cyan-400 via-blue-500 to-purple-600 flex items-center justify-center text-white font-bold shadow-[0_0_40px_rgba(34,211,238,0.35)] shrink-0">
               {(user?.name || "U").charAt(0).toUpperCase()}
@@ -206,7 +204,6 @@ function Sidebar({ mobileOpen = false, onClose = () => {} }) {
               <p className="text-white font-semibold truncate">
                 {user?.name || "User"}
               </p>
-
               <p className="text-slate-500 text-xs truncate">
                 {user?.email || "user@example.com"}
               </p>
@@ -232,7 +229,7 @@ function Sidebar({ mobileOpen = false, onClose = () => {} }) {
             <button
               type="button"
               onClick={logout}
-              className="w-full mt-2 px-4 py-3 rounded-2xl bg-red-500/10 text-red-300 border border-red-400/20 hover:bg-red-500/20 hover:shadow-[0_0_30px_rgba(239,68,68,0.15)] transition-all flex items-center justify-center gap-2 text-sm"
+              className="w-full mt-2 px-4 py-3 rounded-2xl bg-red-500/10 text-red-300 border border-red-400/20 hover:bg-red-500/20 transition-all flex items-center justify-center gap-2 text-sm"
             >
               <LogOut size={18} />
               Logout

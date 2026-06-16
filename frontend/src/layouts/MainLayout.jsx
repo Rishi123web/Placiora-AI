@@ -43,7 +43,7 @@ function MainLayout({ children }) {
         onClose={() => setMobileSidebarOpen(false)}
       />
 
-      <main className="relative z-10 min-h-dvh lg:pl-[292px] overflow-x-hidden">
+      <main className="relative z-10 min-h-dvh w-full lg:pl-[292px] overflow-x-hidden">
         <div className="sticky top-0 z-40 px-4 py-3 sm:px-6 sm:py-4 lg:px-8 bg-slate-950/75 backdrop-blur-xl border-b border-white/10">
           <div className="flex items-center justify-between gap-4">
             <div className="flex items-center gap-3 min-w-0">
